@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}ML Stock Optimizer Dashboard{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Left Column -->
+    <div class="col-lg-4">
+        <div class="card mb-4">
+            <div class="card-header">1. Configuration</div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label for="universeSelector" class="form-label">Investment Universe:</label>
+                    <select id="universeSelector" class="form-select">
+                        {% for u in universes %}
+                        <option value="{{ u }}">{{ u.replace('_', ' ') }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label for="topNInput" class="form-label">Number of Stocks to Pick:</label>
+                    <input type="number" class="form-control" id="topNInput" value="10" min="5" max="20">
+                </div>
+                <div class="mb-3">
+                    <label for="riskFreeInput" class="form-label">Risk-Free Rate (%):</label>
+                    <input type="number" class="form-control" id="riskFreeInput" value="6.0" step="0.1">
+                </div>
+                 <button id="runAnalysisBtn" class="btn btn-primary w-100" {% if not model_ready %}disabled{% endif %}>
+                    Run Full Analysis
+                </button>
+                {% if not model_ready %}
+                    <p class="text-danger small mt-2">Model not loaded. Please run train_and_save_model.py and restart the server.</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header">2. Portfolio Rationale (AI Generated)</div>
+            <div class="card-body" id="rationaleDiv">
+                <p class="text-muted">Run analysis to generate the portfolio rationale.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Column -->
+    <div class="col-lg-8">
+        <div class="card mb-4">
+            <div class="card-header">3. Top Stock Picks & Allocation</div>
+             <div class="card-body">
+                <div class="row">
+                    <div class="col-md-5">
+                        <h5>ML Stock Picks</h5>
+                        <div id="stockPicksDiv" style="max-height: 350px; overflow-y: auto;">
+                            <p class="text-muted">Run analysis to see results.</p>
+                        </div>
+                    </div>
+                    <div class="col-md-7">
+                        <h5>Optimal Portfolio Allocation</h5>
+                        <div id="portfolioPieChart" style="min-height: 350px;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">4. Multi-Factor Analysis</div>
+            <div class="card-body">
+                <h5>Sector Exposure</h5>
+                 <div id="sectorBarChart" style="min-height: 300px;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

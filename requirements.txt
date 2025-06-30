@@ -1,0 +1,13 @@
+flask
+pandas
+numpy
+scikit-learn
+scipy
+yfinance  # Changed from nsepy
+# nsescraper can be removed if not used for other purposes
+requests
+matplotlib
+plotly
+gunicorn
+Flask-Caching # Added for performance
+joblib # Added for saving the model
