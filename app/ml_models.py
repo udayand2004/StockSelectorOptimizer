@@ -120,12 +120,14 @@ def get_portfolio_data(symbols):
             portfolio_data[symbol] = data
     return portfolio_data
 
+# In app/ml_models.py -> optimize_portfolio()
+
 def optimize_portfolio(portfolio_data, risk_free_rate):
     symbols = list(portfolio_data.keys())
     if len(symbols) < 2: return {symbols[0]: 1.0} if symbols else {}
     
     close_prices = {symbol: data['Close'] for symbol, data in portfolio_data.items()}
-    portfolio_df = pd.DataFrame(close_prices).ffill().bfill() # Fill missing values
+    portfolio_df = pd.DataFrame(close_prices).ffill().bfill()
     
     returns = portfolio_df.pct_change().dropna()
     mean_returns = returns.mean()
@@ -139,11 +141,22 @@ def optimize_portfolio(portfolio_data, risk_free_rate):
 
     args = (mean_returns, cov_matrix, risk_free_rate)
     constraints = ({'type': 'eq', 'fun': lambda x: np.sum(x) - 1})
-    bounds = tuple((0, 1) for _ in range(num_assets))
+    
+    # --- CHANGE THIS SECTION ---
+    # Enforce a maximum weight of 25% for any single stock.
+    max_single_stock_weight = 0.25 
+    bounds = tuple((0, max_single_stock_weight) for _ in range(num_assets))
+    
     initial_weights = num_assets * [1. / num_assets,]
     
     result = minimize(neg_sharpe_ratio, initial_weights, args=args, method='SLSQP', bounds=bounds, constraints=constraints)
-    return dict(zip(symbols, np.round(result.x, 4)))
+    
+    # Clean up very small weights and re-normalize to ensure sum is 1
+    cleaned_weights = result.x
+    cleaned_weights[cleaned_weights < 0.001] = 0 # Set weights less than 0.1% to zero
+    cleaned_weights /= np.sum(cleaned_weights) # Re-distribute the remaining weight
+    
+    return dict(zip(symbols, np.round(cleaned_weights, 4)))
 
 def get_portfolio_sector_exposure(portfolio_data, weights):
     sector_exposure = {}
