@@ -2,70 +2,127 @@
 {% block title %}ML Stock Optimizer Dashboard{% endblock %}
 
 {% block content %}
-<div class="row">
-    <!-- Left Column -->
-    <div class="col-lg-4">
-        <div class="card mb-4">
-            <div class="card-header">1. Configuration</div>
-            <div class="card-body">
-                <div class="mb-3">
-                    <label for="universeSelector" class="form-label">Investment Universe:</label>
-                    <select id="universeSelector" class="form-select">
-                        {% for u in universes %}
-                        <option value="{{ u }}">{{ u.replace('_', ' ') }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="mb-3">
-                    <label for="topNInput" class="form-label">Number of Stocks to Pick:</label>
-                    <input type="number" class="form-control" id="topNInput" value="10" min="5" max="20">
-                </div>
-                <div class="mb-3">
-                    <label for="riskFreeInput" class="form-label">Risk-Free Rate (%):</label>
-                    <input type="number" class="form-control" id="riskFreeInput" value="6.0" step="0.1">
-                </div>
-                 <button id="runAnalysisBtn" class="btn btn-primary w-100" {% if not model_ready %}disabled{% endif %}>
-                    Run Full Analysis
-                </button>
-                {% if not model_ready %}
-                    <p class="text-danger small mt-2">Model not loaded. Please run train_and_save_model.py and restart the server.</p>
-                {% endif %}
-            </div>
-        </div>
+<!-- Tab Navigation -->
+<ul class="nav nav-tabs" id="mainTab" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="live-analysis-tab" data-bs-toggle="tab" data-bs-target="#live-analysis-pane" type="button" role="tab" aria-controls="live-analysis-pane" aria-selected="true">Live Analysis</button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="backtesting-tab" data-bs-toggle="tab" data-bs-target="#backtesting-pane" type="button" role="tab" aria-controls="backtesting-pane" aria-selected="false">Strategy Backtesting</button>
+    </li>
+</ul>
 
-        <div class="card mb-4">
-            <div class="card-header">2. Portfolio Rationale (AI Generated)</div>
-            <div class="card-body" id="rationaleDiv">
-                <p class="text-muted">Run analysis to generate the portfolio rationale.</p>
+<!-- Tab Content -->
+<div class="tab-content pt-3" id="mainTabContent">
+    <!-- Live Analysis Pane (Unchanged) -->
+    <div class="tab-pane fade show active" id="live-analysis-pane" role="tabpanel" aria-labelledby="live-analysis-tab">
+        <div class="row">
+            <div class="col-lg-4">
+                <div class="card mb-4">
+                    <div class="card-header">1. Live Analysis Configuration</div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label for="universeSelector" class="form-label">Investment Universe:</label>
+                            <select id="universeSelector" class="form-select">
+                                {% for u in universes %}<option value="{{ u }}">{{ u.replace('_', ' ') }}</option>{% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="topNInput" class="form-label">Number of Stocks to Pick:</label>
+                            <input type="number" class="form-control" id="topNInput" value="10" min="5" max="20">
+                        </div>
+                        <div class="mb-3">
+                            <label for="riskFreeInput" class="form-label">Risk-Free Rate (%):</label>
+                            <input type="number" class="form-control" id="riskFreeInput" value="6.0" step="0.1">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Optimization Method:</label>
+                            <div class="form-check"><input class="form-check-input" type="radio" name="optMethod" id="optSharpe" value="sharpe" checked><label class="form-check-label" for="optSharpe">Maximize Sharpe Ratio</label></div>
+                            <div class="form-check"><input class="form-check-input" type="radio" name="optMethod" id="optHRP" value="hrp"><label class="form-check-label" for="optHRP">Hierarchical Risk Parity</label></div>
+                        </div>
+                        <button id="runAnalysisBtn" class="btn btn-primary w-100" {% if not model_ready %}disabled{% endif %}>Run Full Analysis</button>
+                        {% if not model_ready %}<p class="text-danger small mt-2">Model not loaded. Run train_and_save_model.py and restart.</p>{% endif %}
+                    </div>
+                </div>
+                <div class="card mb-4">
+                    <div class="card-header">2. Portfolio Rationale (AI Generated)</div>
+                    <div class="card-body" id="rationaleDiv"><p class="text-muted">Run analysis to generate rationale.</p></div>
+                </div>
+            </div>
+            <div class="col-lg-8">
+                <div class="card mb-4">
+                    <div class="card-header">3. Top Stock Picks & Allocation</div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-5"><h5>ML Stock Picks</h5><div id="stockPicksDiv" style="max-height: 350px; overflow-y: auto;"><p class="text-muted">Run analysis for results.</p></div></div>
+                            <div class="col-md-7"><h5>Optimal Portfolio Allocation</h5><div id="portfolioPieChart" style="min-height: 350px;"></div></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header">4. Multi-Factor Analysis</div>
+                    <div class="card-body"><h5>Sector Exposure</h5><div id="sectorBarChart" style="min-height: 300px;"></div></div>
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- Right Column -->
-    <div class="col-lg-8">
-        <div class="card mb-4">
-            <div class="card-header">3. Top Stock Picks & Allocation</div>
-             <div class="card-body">
-                <div class="row">
-                    <div class="col-md-5">
-                        <h5>ML Stock Picks</h5>
-                        <div id="stockPicksDiv" style="max-height: 350px; overflow-y: auto;">
-                            <p class="text-muted">Run analysis to see results.</p>
+    <!-- Backtesting Pane (NEW, UPDATED STRUCTURE) -->
+    <div class="tab-pane fade" id="backtesting-pane" role="tabpanel" aria-labelledby="backtesting-tab">
+        <div class="row">
+            <!-- Left Column: Backtest Config -->
+            <div class="col-lg-4">
+                <div class="card mb-4">
+                    <div class="card-header">Backtest Configuration</div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label for="backtestUniverse" class="form-label">Investment Universe:</label>
+                            <select id="backtestUniverse" class="form-select">
+                                {% for u in universes %}<option value="{{ u }}">{{ u.replace('_', ' ') }}</option>{% endfor %}
+                            </select>
                         </div>
-                    </div>
-                    <div class="col-md-7">
-                        <h5>Optimal Portfolio Allocation</h5>
-                        <div id="portfolioPieChart" style="min-height: 350px;"></div>
+                        <div class="mb-3">
+                            <label for="backtestStartDate" class="form-label">Start Date:</label>
+                            <input type="date" class="form-control" id="backtestStartDate" value="2022-01-01">
+                        </div>
+                        <div class="mb-3">
+                            <label for="backtestEndDate" class="form-label">End Date:</label>
+                            <input type="date" class="form-control" id="backtestEndDate" value="{{ current_date }}">
+                        </div>
+                        <div class="alert alert-info small">
+                            Note: The backtester uses the "Number of Stocks to Pick" from the Live Analysis tab.
+                        </div>
+                        <button id="runBacktestBtn" class="btn btn-success w-100">Run Backtest</button>
                     </div>
                 </div>
             </div>
-        </div>
-        
-        <div class="card">
-            <div class="card-header">4. Multi-Factor Analysis</div>
-            <div class="card-body">
-                <h5>Sector Exposure</h5>
-                 <div id="sectorBarChart" style="min-height: 300px;"></div>
+            <!-- Right Column: Backtest Results -->
+            <div class="col-lg-8">
+                <div class="card">
+                    <div class="card-header">Backtest Results</div>
+                    <div class="card-body" style="min-height: 80vh;">
+                        <div id="backtestStatus" class="text-center p-5">
+                            <p class="text-muted">Configure and run a backtest to see the performance report.</p>
+                        </div>
+
+                        <!-- Placeholders for integrated results -->
+                        <div id="backtestResultContainer" style="display: none;">
+                            <!-- Key Metrics Row -->
+                            <div class="row text-center mb-4">
+                                <div class="col"><div class="card h-100"><div class="card-body"><h5 id="cagrValue" class="card-title">-</h5><p class="card-text text-muted small">CAGR</p></div></div></div>
+                                <div class="col"><div class="card h-100"><div class="card-body"><h5 id="sharpeValue" class="card-title">-</h5><p class="card-text text-muted small">Sharpe</p></div></div></div>
+                                <div class="col"><div class="card h-100"><div class="card-body"><h5 id="drawdownValue" class="card-title">-</h5><p class="card-text text-muted small">Max Drawdown</p></div></div></div>
+                                <div class="col"><div class="card h-100"><div class="card-body"><h5 id="calmarValue" class="card-title">-</h5><p class="card-text text-muted small">Calmar</p></div></div></div>
+                            </div>
+                            <!-- Equity Curve Chart -->
+                            <div id="backtestEquityChart" class="mt-4" style="min-height: 400px;"></div>
+                            
+                            <!-- Drawdown Chart -->
+                            <div id="backtestDrawdownChart" class="mt-4" style="min-height: 250px;"></div>
+                        </div>
+
+                    </div>
+                </div>
             </div>
         </div>
     </div>

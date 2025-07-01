@@ -1,11 +1,8 @@
-# app/data_fetcher.py (Corrected and Robust Version)
-
 import pandas as pd
 import yfinance as yf
 from flask_caching import Cache
-from datetime import date
 
-# Use FileSystemCache to share data between the training script and the web app
+# Use FileSystemCache which is persistent and can be shared between processes
 cache = Cache(config={'CACHE_TYPE': 'FileSystemCache', 'CACHE_DIR': 'flask_cache'})
 
 STOCK_UNIVERSES = {
@@ -28,28 +25,31 @@ STOCK_UNIVERSES = {
 
 @cache.memoize(timeout=43200) # Cache data for 12 hours
 def get_historical_data(symbol, start_date, end_date):
+    """
+    Fetches historical data for a stock AND the Nifty index together.
+    This creates a self-contained DataFrame with Relative_Strength pre-calculated.
+    This is the original, robust logic.
+    """
     ticker_symbol_ns = f"{symbol}.NS"
     nifty_symbol = "^NSEI"
     
     print(f"Fetching data for {ticker_symbol_ns} and {nifty_symbol} from {start_date} to {end_date}")
     try:
-        # ** THE FIX: Reverted to a single, combined download call **
+        # Download both tickers at once. yfinance returns a multi-level column DataFrame.
         all_data = yf.download([ticker_symbol_ns, nifty_symbol], start=start_date, end=end_date, progress=False, auto_adjust=True)
 
-        # Check if the primary stock data was downloaded successfully
+        # Check for valid data
         if ticker_symbol_ns not in all_data['Close'].columns or all_data['Close'][ticker_symbol_ns].isnull().all():
              print(f"--> WARNING: Data for {ticker_symbol_ns} could not be downloaded. Skipping.")
              return pd.DataFrame()
 
-        # Extract the OHLCV data for the specific stock
+        # Extract just the stock's OHLCV data by selecting its column level
         stock_data = all_data.loc[:, (slice(None), ticker_symbol_ns)].copy()
-        stock_data.columns = stock_data.columns.droplevel(1) # Remove the multi-index level
+        stock_data.columns = stock_data.columns.droplevel(1) # Flatten the multi-level columns
         
-        # Extract Close prices for relative strength calculation
+        # Calculate Relative Strength using the full downloaded data
         stock_close = all_data['Close'][ticker_symbol_ns]
         nifty_close = all_data['Close'][nifty_symbol]
-        
-        # Calculate and assign the Relative Strength
         stock_data['Relative_Strength'] = (stock_close / nifty_close)
         
         # Fetch and add sector information
@@ -59,8 +59,8 @@ def get_historical_data(symbol, start_date, end_date):
         except Exception:
             stock_data['Sector'] = 'Unknown'
         
-        # Drop any rows with NaN values that might have been created
-        return stock_data.dropna()
+        # Drop rows where essential data might be missing
+        return stock_data.dropna(subset=['Open', 'High', 'Low', 'Close', 'Relative_Strength'])
 
     except Exception as e:
         print(f"--> CRITICAL ERROR fetching data for {ticker_symbol_ns}: {e}")

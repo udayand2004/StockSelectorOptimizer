@@ -1,15 +1,15 @@
-// static/js/main.js
-
 document.addEventListener('DOMContentLoaded', function() {
+    // --- LIVE ANALYSIS SECTION (Restored and Complete) ---
     const runAnalysisBtn = document.getElementById('runAnalysisBtn');
     const loader = document.getElementById('loader');
-
     const stockPicksDiv = document.getElementById('stockPicksDiv');
     const rationaleDiv = document.getElementById('rationaleDiv');
     const portfolioPieChart = document.getElementById('portfolioPieChart');
     const sectorBarChart = document.getElementById('sectorBarChart');
 
-    runAnalysisBtn.addEventListener('click', runFullAnalysis);
+    if (runAnalysisBtn) {
+        runAnalysisBtn.addEventListener('click', runFullAnalysis);
+    }
 
     function showLoader() { loader.style.display = 'block'; }
     function hideLoader() { loader.style.display = 'none'; }
@@ -21,7 +21,6 @@ document.addEventListener('DOMContentLoaded', function() {
         Plotly.purge(sectorBarChart);
     }
 
-    // --- ROBUSTNESS FIX: Function to display errors in the UI ---
     function displayError(errorMsg) {
         const errorHtml = `<div class="error-message">${errorMsg}</div>`;
         stockPicksDiv.innerHTML = errorHtml;
@@ -31,11 +30,12 @@ document.addEventListener('DOMContentLoaded', function() {
     async function runFullAnalysis() {
         showLoader();
         clearResults();
-
+        
         const config = {
             universe: document.getElementById('universeSelector').value,
             top_n: document.getElementById('topNInput').value,
             risk_free: document.getElementById('riskFreeInput').value / 100,
+            optimization_method: document.querySelector('input[name="optMethod"]:checked').value
         };
 
         try {
@@ -47,15 +47,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
             const data = await response.json();
 
-            // --- ROBUSTNESS FIX: Check for the 'error' key in the response ---
             if (!response.ok || data.error) {
-                // If there's an error, display it and stop processing
                 displayError(data.error || `An unknown error occurred (Status: ${response.status}).`);
-                hideLoader();
                 return;
             }
             
-            // If we get here, the data is valid
             updateStockPicks(data.top_stocks);
             updateRationale(data.rationale);
             plotPortfolioPie(data.optimal_weights);
@@ -88,44 +84,161 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function plotPortfolioPie(weights) {
         if (!weights || Object.keys(weights).length === 0) return;
-        const labels = Object.keys(weights);
-        const values = Object.values(weights);
+        const labels = Object.keys(weights).filter(k => weights[k] > 0);
+        const values = labels.map(l => weights[l]);
+        if (labels.length === 0) return;
         const data = [{
-            values: values,
-            labels: labels,
-            type: 'pie',
-            hole: .4,
-            textinfo: 'label+percent',
-            textposition: 'inside',
-            automargin: true
+            values: values, labels: labels, type: 'pie', hole: .4,
+            textinfo: 'label+percent', textposition: 'inside', automargin: true
         }];
-        const layout = {
-            title: '',
-            showlegend: false,
-            margin: { t: 10, b: 10, l: 10, r: 10 },
-            height: 350
-        };
+        const layout = { title: '', showlegend: false, margin: { t: 10, b: 10, l: 10, r: 10 }, height: 350 };
         Plotly.newPlot(portfolioPieChart, data, layout, {responsive: true});
     }
 
     function plotSectorBar(exposure) {
         if (!exposure || Object.keys(exposure).length === 0) return;
-        const labels = Object.keys(exposure);
-        const values = Object.values(exposure).map(v => v * 100);
+        const sortedSectors = Object.entries(exposure).sort((a, b) => b[1] - a[1]);
+        const labels = sortedSectors.map(s => s[0]);
+        const values = sortedSectors.map(s => s[1] * 100);
         const data = [{
-            x: labels,
-            y: values,
-            type: 'bar',
-            text: values.map(v => `${v.toFixed(1)}%`),
-            textposition: 'auto'
+            x: labels, y: values, type: 'bar',
+            text: values.map(v => `${v.toFixed(1)}%`), textposition: 'auto'
         }];
-        const layout = {
-            title: '',
-            yaxis: { title: 'Weight (%)' },
-            xaxis: { tickangle: -45 },
-            margin: { t: 10, b: 100, l: 50, r: 20 },
-            height: 300
-        };
+        const layout = { title: '', yaxis: { title: 'Weight (%)' }, xaxis: { tickangle: -45 }, margin: { t: 10, b: 100, l: 50, r: 20 }, height: 300 };
         Plotly.newPlot(sectorBarChart, data, layout, {responsive: true});
+    }
+
+    // --- BACKTESTING LOGIC (NEW, INTEGRATED VERSION) ---
+    const runBacktestBtn = document.getElementById('runBacktestBtn');
+    let pollingInterval;
+
+    if (runBacktestBtn) {
+        runBacktestBtn.addEventListener('click', runBacktest);
+    }
+    
+    function resetBacktestUI() {
+        document.getElementById('backtestResultContainer').style.display = 'none';
+        Plotly.purge('backtestEquityChart');
+        Plotly.purge('backtestDrawdownChart');
+        document.getElementById('cagrValue').innerText = '-';
+        document.getElementById('sharpeValue').innerText = '-';
+        document.getElementById('drawdownValue').innerText = '-';
+        document.getElementById('calmarValue').innerText = '-';
+    }
+
+    function runBacktest() {
+        const backtestStatusDiv = document.getElementById('backtestStatus');
+        resetBacktestUI();
+        
+        backtestStatusDiv.innerHTML = `
+            <div class="d-flex justify-content-center align-items-center">
+                <div class="spinner-border text-primary" role="status"></div>
+                <strong class="ms-3">Starting backtest... This may take several minutes.</strong>
+            </div>`;
+        backtestStatusDiv.style.display = 'block';
+        
+        if (pollingInterval) clearInterval(pollingInterval);
+        
+        const config = {
+            universe: document.getElementById('backtestUniverse').value,
+            start_date: document.getElementById('backtestStartDate').value,
+            end_date: document.getElementById('backtestEndDate').value,
+            top_n: document.getElementById('topNInput').value
+        };
+        
+        fetch('/api/run_backtest', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(config)
+        })
+        .then(response => response.ok ? response.json() : Promise.reject(response))
+        .then(data => {
+            backtestStatusDiv.innerHTML += `<p class="text-muted small mt-3">Task ID: ${data.task_id}</p>`;
+            pollTaskStatus(data.task_id);
+        })
+        .catch(error => {
+            console.error('Error starting backtest:', error);
+            backtestStatusDiv.innerHTML = `<div class="error-message">Failed to start the backtest task. Check server logs.</div>`;
+        });
+    }
+
+    function pollTaskStatus(taskId) {
+        const backtestStatusDiv = document.getElementById('backtestStatus');
+
+        pollingInterval = setInterval(() => {
+            fetch(`/api/backtest_status/${taskId}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.state === 'SUCCESS') {
+                    clearInterval(pollingInterval);
+                    backtestStatusDiv.style.display = 'none';
+                    displayBacktestResults(data.result);
+                } else if (data.state === 'FAILURE') {
+                    clearInterval(pollingInterval);
+                    backtestStatusDiv.innerHTML = `<div class="error-message"><strong>Backtest Failed:</strong><br><pre>${data.status}</pre></div>`;
+                } else {
+                    backtestStatusDiv.innerHTML = `
+                        <div class="d-flex justify-content-center align-items-center">
+                           <div class="spinner-border text-primary" role="status"></div>
+                           <strong class="ms-3">${data.status || 'Processing...'}</strong>
+                        </div>
+                        <p class="text-muted small mt-3">Task ID: ${taskId}</p>`;
+                }
+            })
+            .catch(error => {
+                clearInterval(pollingInterval);
+                console.error('Error polling task status:', error);
+                backtestStatusDiv.innerHTML = `<div class="error-message">Error checking backtest status. The connection may have been lost.</div>`;
+            });
+        }, 3000);
+    }
+
+    function displayBacktestResults(results) {
+        const container = document.getElementById('backtestResultContainer');
+        if (!results || !results.kpis || !results.charts) {
+            document.getElementById('backtestStatus').innerHTML = `<div class="error-message">Received invalid or empty results from the backtest.</div>`;
+            document.getElementById('backtestStatus').style.display = 'block';
+            return;
+        }
+
+        document.getElementById('cagrValue').innerText = results.kpis.CAGR;
+        document.getElementById('sharpeValue').innerText = results.kpis.Sharpe;
+        document.getElementById('drawdownValue').innerText = results.kpis.Max_Drawdown;
+        document.getElementById('calmarValue').innerText = results.kpis.Calmar;
+        
+        const equityTrace = {
+            x: results.charts.equity.dates,
+            y: results.charts.equity.portfolio,
+            mode: 'lines', name: 'Strategy',
+            line: { color: '#0d6efd', width: 2 }
+        };
+        const benchmarkTrace = {
+            x: results.charts.equity.dates,
+            y: results.charts.equity.benchmark,
+            mode: 'lines', name: 'Benchmark (NIFTY 50)',
+            line: { color: '#6c757d', dash: 'dot', width: 1.5 }
+        };
+        const equityLayout = {
+            title: 'Strategy vs. Benchmark Performance (Log Scale)',
+            yaxis: { title: 'Cumulative Growth', type: 'log' },
+            legend: { x: 0.01, y: 0.99 },
+            margin: { t: 40, b: 40, l: 60, r: 20 }
+        };
+        Plotly.newPlot('backtestEquityChart', [equityTrace, benchmarkTrace], equityLayout, {responsive: true});
+
+        const drawdownTrace = {
+            x: results.charts.drawdown.dates,
+            y: results.charts.drawdown.values,
+            type: 'scatter', mode: 'lines', fill: 'tozeroy',
+            name: 'Drawdown', line: { color: '#dc3545' }
+        };
+        const drawdownLayout = {
+            title: 'Strategy Drawdowns',
+            yaxis: { title: 'Drawdown (%)' },
+            margin: { t: 40, b: 40, l: 60, r: 20 }
+        };
+        Plotly.newPlot('backtestDrawdownChart', [drawdownTrace], drawdownLayout, {responsive: true});
+
+        container.style.display = 'block';
     }
 });
