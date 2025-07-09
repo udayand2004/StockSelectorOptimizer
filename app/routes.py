@@ -4,19 +4,28 @@ from . import ml_models
 from .tasks import run_backtest_task
 from celery.result import AsyncResult
 from datetime import date
+import joblib # <<< ADD THIS IMPORT
+import os # <<< ADD THIS IMPORT
 
 @app.route('/')
 def index():
-    model_ready = app.stock_model is not None
+    # Check if the model file exists, not if it's loaded in memory
+    model_ready = os.path.exists(app.model_path)
     universes = list(data_fetcher.STOCK_UNIVERSES.keys())
-    # Pass current date to template for default end date
     current_date = date.today().strftime('%Y-%m-%d')
     return render_template('index.html', model_ready=model_ready, universes=universes, current_date=current_date)
 
 @app.route('/api/analyze_and_optimize', methods=['POST'])
 def analyze_and_optimize():
+    # --- MODIFIED SECTION: LAZY LOADING ---
+    # If the model is not loaded in memory yet, load it.
     if app.stock_model is None:
-        return jsonify({'error': 'Model is not loaded. Please train the model and restart the server.'}), 500
+        if not os.path.exists(app.model_path):
+             return jsonify({'error': 'Model file not found. Please train the model.'}), 500
+        print("--- [Live Analysis] Loading model on-demand... ---")
+        app.stock_model = joblib.load(app.model_path)
+        print("--- [Live Analysis] Model loaded. ---")
+    # --- END MODIFIED SECTION ---
 
     config = request.get_json()
     universe_name = config.get('universe', 'NIFTY_50')
@@ -52,25 +61,22 @@ def analyze_and_optimize():
         'rationale': rationale
     })
 
-# --- NEW BACKTESTING ENDPOINTS ---
 
+# --- The rest of the file (backtesting endpoints) is UNCHANGED and correct ---
 @app.route('/api/run_backtest', methods=['POST'])
 def start_backtest():
-    """Triggers the background backtesting task."""
     config = request.get_json()
-    start_date = config.get('start_date')
-    end_date = config.get('end_date')
-    universe = config.get('universe')
-    top_n = int(config.get('top_n', 10))
-    
-    # Use .delay() to run the task in the background
-    task = run_backtest_task.delay(start_date, end_date, universe, top_n, 'BMS')
-    
-    return jsonify({"task_id": task.id}), 202 # 202 Accepted
+    task = run_backtest_task.delay(
+        config.get('start_date'),
+        config.get('end_date'),
+        config.get('universe'),
+        int(config.get('top_n', 10)),
+        'BMS'
+    )
+    return jsonify({"task_id": task.id}), 202
 
 @app.route('/api/backtest_status/<task_id>')
 def backtest_status(task_id):
-    """Polls for the status of a background task."""
     task_result = AsyncResult(task_id, app=app.extensions["celery"])
     
     if task_result.state == 'PENDING':
@@ -78,13 +84,11 @@ def backtest_status(task_id):
     elif task_result.state == 'PROGRESS':
         response = {'state': task_result.state, 'status': task_result.info.get('status', '')}
     elif task_result.state == 'SUCCESS':
-        # The task function returns a dict, so we access it via .result
         response = task_result.result
         response['state'] = task_result.state
     else: # FAILURE
         response = {
             'state': task_result.state,
-            'status': str(task_result.info),  # The exception info
+            'status': str(task_result.info),
         }
-        
     return jsonify(response)

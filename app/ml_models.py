@@ -4,38 +4,46 @@ from scipy.optimize import minimize
 from pypfopt import HRPOpt
 from .data_fetcher import get_historical_data
 from datetime import date, timedelta
-from .strategy import generate_all_features # Using the single, unified strategy function
+from .strategy import generate_all_features
 
 def predict_top_stocks(model, symbols, top_n=10):
     """
-    Predicts top stocks using the unified and robust strategy function.
-    This version is consistent with the backtester and training script.
+    Predicts top stocks for live analysis.
+    This version uses the full, updated feature set.
     """
     if model is None: return []
 
+    # Need enough data for 12-month momentum feature
     end_date = date.today()
-    start_date = end_date - timedelta(days=200)
+    start_date = end_date - timedelta(days=400) 
     
     predictions = {}
     for symbol in symbols:
-        # Step 1: Get the self-contained data for the stock.
         data = get_historical_data(symbol, start_date, end_date)
         if data.empty:
             continue
 
-        # Step 2: Use the single, definitive strategy function to get all features.
         all_features_df = generate_all_features(data)
         
-        # Step 3: Prepare the data for prediction.
-        # We need the last row with a complete set of features (ignoring the 'Target' column).
-        feature_cols = ['MA_20', 'MA_50', 'ROC_20', 'Volatility_20D', 'RSI', 'Relative_Strength']
+        # --- START OF MODIFIED SECTION ---
+        # THIS LIST MUST MATCH the lists in backtesting.py and train_and_save_model.py
+        feature_cols = [
+            'MA_20', 'MA_50', 'ROC_20', 'Volatility_20D', 'RSI', 'Relative_Strength',
+            'Momentum_3M', 'Momentum_6M', 'Momentum_12M', 'Sharpe_3M'
+        ]
+        # --- END OF MODIFIED SECTION ---
+
+        # Check if all required columns are present before trying to select them
+        if not all(col in all_features_df.columns for col in feature_cols):
+            print(f"--> Skipping {symbol}: not all feature columns could be generated.")
+            continue
+            
         latest_features = all_features_df[feature_cols].dropna()
 
         if latest_features.empty:
             print(f"--> Skipping {symbol}: not enough data to compute all features for prediction.")
             continue
         
-        # Step 4: Predict using the most recent valid feature set.
         prediction = model.predict(latest_features.tail(1))[0]
         predictions[symbol] = prediction
     
@@ -45,7 +53,7 @@ def predict_top_stocks(model, symbols, top_n=10):
     sorted_stocks = sorted(predictions.items(), key=lambda item: item[1], reverse=True)
     return [stock[0] for stock in sorted_stocks[:top_n]]
 
-# --- The rest of the file is correct and does not need to be changed ---
+# --- The rest of the file is unchanged and correct ---
 
 def get_portfolio_data(symbols):
     end_date = date.today()

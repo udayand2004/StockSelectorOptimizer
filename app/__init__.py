@@ -28,14 +28,15 @@ def create_app():
         ),
     )
 
-    # Load the production ML model
+    # --- MODIFIED SECTION ---
+    # DO NOT load the model here. We will load it on-demand in the route.
+    # This prevents the Celery fork/deadlock issue.
     model_path = 'app/stock_selector_model.joblib'
-    if os.path.exists(model_path):
-        app.stock_model = joblib.load(model_path)
-        print("Production ML model loaded successfully.")
-    else:
-        app.stock_model = None
+    app.stock_model = None # Initialize as None
+    app.model_path = model_path # Store the path for later
+    if not os.path.exists(model_path):
         print("WARNING: Production ML model not found. Live analysis will be disabled.")
+    # --- END MODIFIED SECTION ---
 
     # Initialize extensions
     cache.init_app(app)
@@ -43,5 +44,5 @@ def create_app():
 
     with app.app_context():
         from . import routes
-        from . import tasks # This import registers the tasks with Celery
+        from . import tasks 
         return app

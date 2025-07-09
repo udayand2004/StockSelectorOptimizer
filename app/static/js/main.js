@@ -162,7 +162,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    function pollTaskStatus(taskId) {
+        function pollTaskStatus(taskId) {
         const backtestStatusDiv = document.getElementById('backtestStatus');
 
         pollingInterval = setInterval(() => {
@@ -177,10 +177,18 @@ document.addEventListener('DOMContentLoaded', function() {
                     clearInterval(pollingInterval);
                     backtestStatusDiv.innerHTML = `<div class="error-message"><strong>Backtest Failed:</strong><br><pre>${data.status}</pre></div>`;
                 } else {
+                    // <<< MODIFIED: This block now handles PENDING and PROGRESS states
+                    let statusMessage = 'Processing...';
+                    if (data.state === 'PROGRESS' && data.status) {
+                        statusMessage = data.status;
+                    } else if (data.status) {
+                        statusMessage = data.status; // For PENDING state
+                    }
+
                     backtestStatusDiv.innerHTML = `
                         <div class="d-flex justify-content-center align-items-center">
                            <div class="spinner-border text-primary" role="status"></div>
-                           <strong class="ms-3">${data.status || 'Processing...'}</strong>
+                           <strong class="ms-3">${statusMessage}</strong>
                         </div>
                         <p class="text-muted small mt-3">Task ID: ${taskId}</p>`;
                 }
@@ -190,7 +198,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 console.error('Error polling task status:', error);
                 backtestStatusDiv.innerHTML = `<div class="error-message">Error checking backtest status. The connection may have been lost.</div>`;
             });
-        }, 3000);
+        }, 3000); // Poll every 3 seconds
     }
 
     function displayBacktestResults(results) {

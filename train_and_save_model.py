@@ -7,23 +7,21 @@ from tqdm import tqdm
 
 # App imports
 from app.data_fetcher import get_stock_universe, get_historical_data, cache
-from app.strategy import generate_all_features # <-- CORRECTED IMPORT
+from app.strategy import generate_all_features
 
 def train_production_model(symbols):
     """Trains and saves the final LightGBM model for production use."""
     print("--- Fetching data for production model ---")
     end_date = date.today()
-    start_date = end_date - timedelta(days=5 * 365)
+    # Need 5 years + ~1 year for feature calculation buffer
+    start_date = end_date - timedelta(days=6 * 365) 
     
     all_training_data = []
     print("--- Preparing training data for all symbols ---")
     for symbol in tqdm(symbols, desc="Processing Symbols"):
-        # get_historical_data now provides a self-contained DataFrame
         data = get_historical_data(symbol, start_date, end_date)
         if not data.empty:
-            # Use the unified strategy to prepare training data
             all_features_df = generate_all_features(data)
-            # For training, we only use rows where the 'Target' is not NaN
             training_ready_df = all_features_df.dropna(subset=['Target'])
             if not training_ready_df.empty:
                 all_training_data.append(training_ready_df)
@@ -33,9 +31,16 @@ def train_production_model(symbols):
         return None
 
     full_dataset = pd.concat(all_training_data)
-    feature_cols = ['MA_20', 'MA_50', 'ROC_20', 'Volatility_20D', 'RSI', 'Relative_Strength']
-    X = full_dataset[feature_cols]
-    y = full_dataset['Target']
+    
+    # --- UPDATED FEATURE LIST ---
+    feature_cols = [
+        'MA_20', 'MA_50', 'ROC_20', 'Volatility_20D', 'RSI', 'Relative_Strength',
+        'Momentum_3M', 'Momentum_6M', 'Momentum_12M', 'Sharpe_3M'
+    ]
+    # --- END UPDATED FEATURE LIST ---
+
+    X = full_dataset[feature_cols].dropna()
+    y = full_dataset.loc[X.index]['Target'] # Align y with rows that have all features
 
     best_params = {
         'objective': 'regression_l1', 'metric': 'rmse', 'n_estimators': 2000,

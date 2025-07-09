@@ -1,20 +1,22 @@
 import pandas as pd
+import numpy as np
 
 def generate_all_features(df: pd.DataFrame) -> pd.DataFrame:
     """
-    The single, definitive function to generate all features and the target variable.
-    It takes a DataFrame that is assumed to already have a 'Relative_Strength' column.
+    The single, definitive function to generate all features for a stock.
+    This version includes standard indicators plus advanced momentum and 
+    risk-adjusted return features.
     
     Returns:
-        A DataFrame with all features and the 'Target' column.
-        Note: The 'Target' for the last 22 rows will be NaN.
+        A DataFrame with all feature columns and the 'Target' column.
     """
-    if df.empty or len(df) < 50:
+    # We need at least 252 days of data for the 12-month momentum feature
+    if df.empty or len(df) < 252:
         return pd.DataFrame()
 
     df_feat = df.copy()
     
-    # Technical Indicators
+    # --- Standard Technical Indicators ---
     df_feat['MA_20'] = df_feat['Close'].rolling(window=20).mean()
     df_feat['MA_50'] = df_feat['Close'].rolling(window=50).mean()
     df_feat['ROC_20'] = df_feat['Close'].pct_change(20)
@@ -26,7 +28,20 @@ def generate_all_features(df: pd.DataFrame) -> pd.DataFrame:
     rs = gain / loss.replace(0, 1e-9)
     df_feat['RSI'] = 100 - (100 / (1 + rs))
 
-    # Target Variable (for training)
+    # --- NEW: Advanced Momentum Features ---
+    # Captures longer-term trends, which are powerful predictors.
+    df_feat['Momentum_3M'] = df_feat['Close'].pct_change(66)
+    df_feat['Momentum_6M'] = df_feat['Close'].pct_change(132)
+    df_feat['Momentum_12M'] = df_feat['Close'].pct_change(252)
+
+    # --- NEW: Risk-Adjusted Return Feature ---
+    # Calculates a rolling 3-month Sharpe ratio to favor "smoother" returns.
+    rolling_returns = df_feat['Close'].pct_change()
+    rolling_sharpe = rolling_returns.rolling(window=66).mean() / rolling_returns.rolling(window=66).std()
+    df_feat['Sharpe_3M'] = rolling_sharpe * np.sqrt(252) # Annualized
+
+    # --- Target Variable (for training) ---
+    # The forward-looking 22-day return we want the model to predict.
     df_feat['Target'] = df_feat['Close'].pct_change(periods=22).shift(-22)
     
     return df_feat
