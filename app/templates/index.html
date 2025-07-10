@@ -14,7 +14,7 @@
 
 <!-- Tab Content -->
 <div class="tab-content pt-3" id="mainTabContent">
-    <!-- Live Analysis Pane -->
+    <!-- Live Analysis Pane (Your existing code for this section is fine) -->
     <div class="tab-pane fade show active" id="live-analysis-pane" role="tabpanel" aria-labelledby="live-analysis-tab">
         <div class="row">
             <div class="col-lg-4">
@@ -95,35 +95,53 @@
                         <button id="runBacktestBtn" class="btn btn-success w-100">Run Backtest</button>
                     </div>
                 </div>
+                <!-- NEW: Full Metrics Snapshot -->
+                <div class="card mb-4">
+                    <div class="card-header">Full Metrics Snapshot</div>
+                    <div id="fullMetricsTableContainer" class="card-body table-responsive" style="max-height: 60vh; overflow-y: auto;">
+                        <p class="text-muted small">Run a backtest to see the detailed metrics report.</p>
+                    </div>
+                </div>
             </div>
             <!-- Right Column: Backtest Results -->
             <div class="col-lg-8">
                 <div class="card">
-                    <div class="card-header">Backtest Results</div>
-                    <div class="card-body" style="min-height: 80vh;">
+                    <div class="card-header">Backtest Performance Report</div>
+                    <div class="card-body">
                         <div id="backtestStatus" class="text-center p-5">
                             <p class="text-muted">Configure and run a backtest to see the performance report.</p>
                         </div>
 
                         <div id="backtestResultContainer" style="display: none;">
                             <!-- Key Metrics Row -->
+                            <h4 class="mb-3">Key Performance Indicators</h4>
                             <div class="row text-center mb-4 g-3">
-                                <div class="col-lg-3 col-6"><div class="card h-100"><div class="card-body"><h5 id="cagrValue" class="card-title">-</h5><p class="card-text text-muted small">CAGR</p></div></div></div>
+                                <div class="col-lg-3 col-6"><div class="card h-100"><div class="card-body"><h5 id="cagrValue" class="card-title">-</h5><p class="card-text text-muted small">CAGR (%)</p></div></div></div>
                                 <div class="col-lg-3 col-6"><div class="card h-100"><div class="card-body"><h5 id="sharpeValue" class="card-title">-</h5><p class="card-text text-muted small">Sharpe</p></div></div></div>
-                                <div class="col-lg-3 col-6"><div class="card h-100"><div class="card-body"><h5 id="drawdownValue" class="card-title">-</h5><p class="card-text text-muted small">Max Drawdown</p></div></div></div>
+                                <div class="col-lg-3 col-6"><div class="card h-100"><div class="card-body"><h5 id="drawdownValue" class="card-title">-</h5><p class="card-text text-muted small">Max Drawdown (%)</p></div></div></div>
                                 <div class="col-lg-3 col-6"><div class="card h-100"><div class="card-body"><h5 id="calmarValue" class="card-title">-</h5><p class="card-text text-muted small">Calmar</p></div></div></div>
                                 <div class="col-lg-3 col-6"><div class="card h-100"><div class="card-body"><h5 id="betaValue" class="card-title">-</h5><p class="card-text text-muted small">Beta</p></div></div></div>
                                 <div class="col-lg-3 col-6"><div class="card h-100"><div class="card-body"><h5 id="sortinoValue" class="card-title">-</h5><p class="card-text text-muted small">Sortino</p></div></div></div>
-                                <div class="col-lg-3 col-6"><div class="card h-100"><div class="card-body"><h5 id="varValue" class="card-title">-</h5><p class="card-text text-muted small">Daily VaR (95%)</p></div></div></div>
-                                <div class="col-lg-3 col-6"><div class="card h-100"><div class="card-body"><h5 id="cvarValue" class="card-title">-</h5><p class="card-text text-muted small">Daily CVaR (95%)</p></div></div></div>
+                                <div class="col-lg-3 col-6"><div class="card h-100"><div class="card-body"><h5 id="varValue" class="card-title">-</h5><p class="card-text text-muted small">Daily VaR</p></div></div></div>
+                                <div class="col-lg-3 col-6"><div class="card h-100"><div class="card-body"><h5 id="cvarValue" class="card-title">-</h5><p class="card-text text-muted small">Daily CVaR</p></div></div></div>
                             </div>
+                            <hr class="my-4">
                             
-                            <!-- Charts -->
-                            <div id="backtestEquityChart" class="mt-4" style="min-height: 400px;"></div>
+                            <!-- Performance Charts -->
+                            <h4 class="mb-3 mt-4">Performance Charts</h4>
+                            <div id="backtestEquityChart" style="min-height: 400px;"></div>
                             <div id="backtestDrawdownChart" class="mt-4" style="min-height: 250px;"></div>
+                            <hr class="my-4">
+
+                            <!-- Historical Allocation Charts -->
+                            <h4 class="mb-3 mt-4">Historical Allocation</h4>
+                            <div id="historicalWeightsChart" style="min-height: 400px;"></div>
+                            <div id="historicalSectorsChart" class="mt-4" style="min-height: 400px;"></div>
+                            <hr class="my-4">
 
                             <!-- Returns Tables -->
-                            <div class="row mt-5">
+                            <h4 class="mb-3 mt-4">Returns Analysis</h4>
+                            <div class="row">
                                 <div class="col-lg-8">
                                     <h5>Monthly Returns (%)</h5>
                                     <div id="monthlyReturnsTable" class="table-responsive small"></div>
@@ -133,6 +151,14 @@
                                     <div id="yearlyReturnsTable" class="table-responsive"></div>
                                 </div>
                             </div>
+                            <hr class="my-4">
+
+                            <!-- Rebalancing Logs -->
+                            <div class="d-flex justify-content-between align-items-center mt-4">
+                                <h4 class="mb-0">Rebalancing Log</h4>
+                                <button id="downloadCsvBtn" class="btn btn-sm btn-outline-secondary">Download as CSV</button>
+                            </div>
+                            <div id="rebalanceLogContainer" class="table-responsive small mt-3" style="max-height: 400px;"></div>
                         </div>
                     </div>
                 </div>

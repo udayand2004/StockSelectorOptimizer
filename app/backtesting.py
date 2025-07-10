@@ -1,15 +1,31 @@
 import pandas as pd
 import numpy as np
-# yfinance is no longer needed here for the main logic
 import quantstats as qs
 from tqdm import tqdm
 from datetime import date
 from dateutil.relativedelta import relativedelta
 import joblib
+import json
 
 from .data_fetcher import get_stock_universe, get_historical_data
-from .ml_models import optimize_portfolio
+from .ml_models import optimize_portfolio, get_portfolio_sector_exposure
 from .strategy import generate_all_features
+
+# --- NEW HELPER FUNCTION ---
+# This function will be used to clean the final dictionary of any non-JSON-serializable objects.
+def to_json_safe(obj):
+    if isinstance(obj, (np.integer, np.int64)):
+        return int(obj)
+    if isinstance(obj, (np.floating, np.float64)):
+        return float(obj)
+    if isinstance(obj, (np.ndarray,)):
+        return obj.tolist()
+    if isinstance(obj, pd.Timestamp):
+        return obj.isoformat()
+    if isinstance(obj, pd.Index):
+        return obj.tolist() # Convert pandas Index to a simple list
+    raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
+
 
 def run_backtest(start_date_str, end_date_str, universe_name, top_n, rebalance_freq='BMS', progress_callback=None):
     def log_progress(message):
@@ -40,6 +56,8 @@ def run_backtest(start_date_str, end_date_str, universe_name, top_n, rebalance_f
     log_progress("\n--- [Backtest Engine] Starting rebalancing simulation... ---")
     rebalance_dates = pd.date_range(start=start_date_str, end=end_date_str, freq=rebalance_freq)
     all_holdings = {}
+    
+    rebalance_logs = []
 
     feature_cols = [
         'MA_20', 'MA_50', 'ROC_20', 'Volatility_20D', 'RSI', 'Relative_Strength',
@@ -50,9 +68,13 @@ def run_backtest(start_date_str, end_date_str, universe_name, top_n, rebalance_f
         log_progress(f"Processing rebalance date: {rebalance_date.date()}")
         nifty_data = get_historical_data('^NSEI', rebalance_date - pd.Timedelta(days=300), rebalance_date)
 
+        current_log = {'Date': rebalance_date.strftime('%Y-%m-%d'), 'Action': 'Hold Cash', 'Details': {}}
+
         if nifty_data.empty or len(nifty_data) < 200:
             tqdm.write(f"--> Not enough NIFTY data in DB for {rebalance_date.date()}. Holding cash.")
             all_holdings[rebalance_date] = {}
+            current_log['Details'] = "Not enough market data"
+            rebalance_logs.append(current_log)
             continue
 
         nifty_ma_200 = nifty_data['Close'].rolling(window=200).mean().iloc[-1]
@@ -60,6 +82,8 @@ def run_backtest(start_date_str, end_date_str, universe_name, top_n, rebalance_f
         if nifty_current_price < nifty_ma_200:
             tqdm.write(f"--> Market in Downtrend on {rebalance_date.date()}. Holding cash.")
             all_holdings[rebalance_date] = {}
+            current_log['Details'] = "Regime filter triggered (Market in Downtrend)"
+            rebalance_logs.append(current_log)
             continue
             
         predictions = {}
@@ -71,20 +95,26 @@ def run_backtest(start_date_str, end_date_str, universe_name, top_n, rebalance_f
             if not latest_features.empty:
                 prediction = model.predict(latest_features.tail(1))[0]
                 predictions[symbol] = prediction
+        
         if not predictions:
             all_holdings[rebalance_date] = {}
+            current_log['Details'] = "ML model returned no valid predictions"
+            rebalance_logs.append(current_log)
             continue
+
         top_stocks = [s for s, p in sorted(predictions.items(), key=lambda item: item[1], reverse=True)[:top_n]]
-        portfolio_data = {
-            s: master_raw_data[s].loc[master_raw_data[s].index < rebalance_date]
-            for s in top_stocks if s in master_raw_data
-        }
+        portfolio_data = { s: master_raw_data[s].loc[master_raw_data[s].index < rebalance_date] for s in top_stocks if s in master_raw_data }
+        
         if len(portfolio_data) >= 2:
             weights = optimize_portfolio(portfolio_data, risk_free_rate=0.06)
             all_holdings[rebalance_date] = weights
+            current_log['Action'] = 'Rebalanced Portfolio'
+            current_log['Details'] = weights
         else:
             all_holdings[rebalance_date] = {}
-
+            current_log['Details'] = "Not enough valid stocks to form a portfolio"
+        
+        rebalance_logs.append(current_log)
 
     log_progress("\n--- [Backtest Engine] Calculating final performance metrics... ---")
     if not all_holdings:
@@ -92,20 +122,26 @@ def run_backtest(start_date_str, end_date_str, universe_name, top_n, rebalance_f
 
     holdings_df = pd.DataFrame.from_dict(all_holdings, orient='index').fillna(0)
     holdings_df.sort_index(inplace=True)
+    
+    sector_exposure_over_time = {}
+    for a_date, weights in holdings_df.iterrows():
+        portfolio_data = { s: master_raw_data[s] for s in weights.index if weights[s] > 0 and s in master_raw_data }
+        sector_exposure_over_time[a_date] = get_portfolio_sector_exposure(portfolio_data, weights)
+    sector_exposure_df = pd.DataFrame.from_dict(sector_exposure_over_time, orient='index').fillna(0)
 
-    price_df = pd.DataFrame({
-        symbol: master_raw_data[symbol]['Close']
-        for symbol in holdings_df.columns if symbol in master_raw_data
-    }).loc[start_date_str:end_date_str]
+
+    price_df = pd.DataFrame({ symbol: master_raw_data[symbol]['Close'] for symbol in holdings_df.columns if symbol in master_raw_data }).loc[start_date_str:end_date_str]
     price_df.sort_index(inplace=True)
 
     returns_df = price_df.pct_change(fill_method=None)
     aligned_holdings = holdings_df.reindex(returns_df.index, method='ffill').fillna(0)
 
-    common_cols = aligned_holdings.columns.intersection(returns_df.columns)
-    portfolio_returns = (aligned_holdings[common_cols] * returns_df[common_cols]).sum(axis=1)
+    TRANSACTION_COST_BPS = 15
+    turnover = (aligned_holdings.shift(1).fillna(0) - aligned_holdings).abs().sum(axis=1) / 2
+    transaction_costs = turnover * (TRANSACTION_COST_BPS / 10000)
+    portfolio_returns = (aligned_holdings * returns_df).sum(axis=1) - transaction_costs
     portfolio_returns.name = 'Strategy'
-
+    
     benchmark_data = get_historical_data('^NSEI', start_date_str, end_date_str)
     benchmark_returns = benchmark_data['Close'].pct_change(fill_method=None)
     benchmark_returns.name = 'Benchmark'
@@ -120,17 +156,19 @@ def run_backtest(start_date_str, end_date_str, universe_name, top_n, rebalance_f
         full_benchmark_equity = (1 + benchmark_returns).cumprod()
         empty_series = pd.Series([0.0], index=pd.to_datetime([start_date_str]))
         empty_monthly = qs.stats.monthly_returns(empty_series).fillna(0)
-        # Use the same logic for empty yearly returns
-        empty_yearly = empty_monthly.resample('Y').apply(lambda x: (1 + x).prod() - 1).T
-        empty_yearly.columns = empty_yearly.columns.year
+        empty_yearly = portfolio_returns.resample('YE').apply(lambda x: (1 + x).prod() - 1).to_frame(name='Strategy') * 0
+        empty_yearly.index = empty_yearly.index.year
         
         results_payload = {
             "kpis": {"CAGR": "0.00%", "Sharpe": "0.00", "Max_Drawdown": "0.00%", "Calmar": "0.00", "Beta": "0.00", "Sortino": "0.00", "VaR": "0.00%", "CVaR": "0.00%"},
             "charts": {
                 "equity": { "dates": full_benchmark_equity.index.strftime('%Y-%m-%d').tolist(), "portfolio": [1.0] * len(full_benchmark_equity), "benchmark": full_benchmark_equity.values.tolist() },
-                "drawdown": { "dates": full_benchmark_equity.index.strftime('%Y-%m-%d').tolist(), "values": [0.0] * len(full_benchmark_equity) }
+                "drawdown": { "dates": full_benchmark_equity.index.strftime('%Y-%m-%d').tolist(), "values": [0.0] * len(full_benchmark_equity) },
+                "historical_weights": {"data": [], "layout": {}},
+                "historical_sectors": {"data": [], "layout": {}}
             },
-            "tables": { "monthly_returns": empty_monthly.to_json(orient='split'), "yearly_returns": empty_yearly.to_json(orient='split') }
+            "tables": { "monthly_returns": empty_monthly.to_json(orient='split'), "yearly_returns": empty_yearly.to_json(orient='split') },
+            "logs": rebalance_logs
         }
     else:
         portfolio_returns_clean = combined['Strategy']
@@ -145,32 +183,41 @@ def run_backtest(start_date_str, end_date_str, universe_name, top_n, rebalance_f
         
         drawdown_series = qs.stats.to_drawdown_series(portfolio_returns_clean)
         monthly_returns_df = qs.stats.monthly_returns(portfolio_returns_clean, compounded=True)
-        
-        # --- THIS IS THE FIX ---
-        # Calculate yearly returns manually from the daily returns series
-        yearly_returns_df = portfolio_returns_clean.resample('Y').apply(lambda x: (1 + x).prod() - 1).to_frame(name='Strategy')
+        yearly_returns_df = portfolio_returns_clean.resample('YE').apply(lambda x: (1 + x).prod() - 1).to_frame(name='Strategy')
         yearly_returns_df.index = yearly_returns_df.index.year
-        # --- END OF FIX ---
 
         strategy_equity = (1 + portfolio_returns_clean).cumprod()
         benchmark_equity = (1 + benchmark_returns_clean).cumprod()
+        
+        stock_traces = []
+        for stock in holdings_df.columns:
+            stock_traces.append({'x': holdings_df.index.strftime('%Y-%m-%d').tolist(), 'y': (holdings_df[stock] * 100).tolist(), 'name': stock, 'type': 'bar'})
+        stock_layout = {'title': 'Historical Stock Weights (%)', 'barmode': 'stack', 'yaxis': {'ticksuffix': '%'}}
+        
+        sector_traces = []
+        for sector in sector_exposure_df.columns:
+            sector_traces.append({'x': sector_exposure_df.index.strftime('%Y-%m-%d').tolist(), 'y': (sector_exposure_df[sector] * 100).tolist(), 'name': sector, 'type': 'bar'})
+        sector_layout = {'title': 'Historical Sector Exposure (%)', 'barmode': 'stack', 'yaxis': {'ticksuffix': '%'}}
 
         results_payload = {
-            "kpis": {
-                "CAGR": f"{kpis.get('CAGR (%)', 0.0):.2f}%", "Sharpe": f"{kpis.get('Sharpe', 0.0):.2f}",
-                "Max_Drawdown": f"{kpis.get('Max Drawdown [%]', 0.0):.2f}%", "Calmar": f"{kpis.get('Calmar', 0.0):.2f}",
-                "Beta": f"{kpis.get('Beta', 0.0):.2f}", "Sortino": f"{kpis.get('Sortino', 0.0):.2f}",
-                "VaR": f"{kpis.get('Daily VaR', 0.0) * 100:.2f}%", "CVaR": f"{kpis.get('Daily CVaR', 0.0) * 100:.2f}%"
-            },
+            "kpis": kpis.to_dict(), # Convert KPI series to a simple dictionary
             "charts": {
                 "equity": { "dates": strategy_equity.index.strftime('%Y-%m-%d').tolist(), "portfolio": strategy_equity.values.tolist(), "benchmark": benchmark_equity.values.tolist() },
-                "drawdown": { "dates": drawdown_series.index.strftime('%Y-%m-%d').tolist(), "values": (drawdown_series.values * 100).tolist() }
+                "drawdown": { "dates": drawdown_series.index.strftime('%Y-%m-%d').tolist(), "values": (drawdown_series.values * 100).tolist() },
+                "historical_weights": {"data": stock_traces, "layout": stock_layout},
+                "historical_sectors": {"data": sector_traces, "layout": sector_layout}
             },
             "tables": {
                 "monthly_returns": monthly_returns_df.to_json(orient='split'),
                 "yearly_returns": yearly_returns_df.to_json(orient='split')
-            }
+            },
+            "logs": rebalance_logs
         }
+    
+    # --- FINAL JSON SERIALIZATION FIX ---
+    # Use our custom default encoder to handle any remaining numpy/pandas types
+    # This ensures the final dictionary is 100% JSON-safe.
+    final_json_safe_payload = json.loads(json.dumps(results_payload, default=to_json_safe))
 
     log_progress("--- [Backtest Engine] Complete. ---")
-    return results_payload
+    return final_json_safe_payload
