@@ -7,8 +7,8 @@ def get_stock_universe(universe_name="NIFTY_50"):
 
 def get_historical_data(symbol, start_date, end_date):
     """
-    Fetches historical data for a given symbol and date range FROM THE DATABASE.
-    This version contains the definitive fix for the benchmark data issue.
+    Fetches raw historical data for a given symbol and date range FROM THE DATABASE.
+    This version does NOT calculate any features.
     """
     start_str = pd.to_datetime(start_date).strftime('%Y-%m-%d')
     end_str = pd.to_datetime(end_date).strftime('%Y-%m-%d')
@@ -24,38 +24,14 @@ def get_historical_data(symbol, start_date, end_date):
             stock_df['Date'] = pd.to_datetime(stock_df['Date'])
             stock_df.set_index('Date', inplace=True)
 
-            if symbol == '^NSEI':
-                stock_df['Relative_Strength'] = 1.0
-                stock_df['Sector'] = 'Index'
-            else:
-                nifty_query = "SELECT Date, Close FROM historical_prices WHERE Symbol = '^NSEI' AND Date BETWEEN ? AND ?"
-                nifty_df = pd.read_sql_query(nifty_query, conn, params=(start_str, end_str))
-                
-                if not nifty_df.empty:
-                    nifty_df['Date'] = pd.to_datetime(nifty_df['Date'])
-                    nifty_df.set_index('Date', inplace=True)
-                    nifty_df.rename(columns={'Close': 'Nifty_Close'}, inplace=True)
-                    
-                    stock_df = stock_df.join(nifty_df, how='left')
-                    stock_df['Relative_Strength'] = stock_df['Close'] / stock_df['Nifty_Close']
-                    stock_df.drop(columns=['Nifty_Close'], inplace=True, errors='ignore')
-                    
-                    # --- FIX FOR PANDAS WARNING ---
-                    stock_df['Relative_Strength'] = stock_df['Relative_Strength'].ffill()
-                    # --- END OF FIX ---
-                else:
-                    stock_df['Relative_Strength'] = 1.0
-
-                meta_query = "SELECT Sector FROM stock_metadata WHERE Symbol = ?"
-                cursor = conn.cursor()
-                result = cursor.execute(meta_query, (symbol,)).fetchone()
-                stock_df['Sector'] = result[0] if result else 'Unknown'
-
+            meta_query = "SELECT Sector FROM stock_metadata WHERE Symbol = ?"
+            cursor = conn.cursor()
+            result = cursor.execute(meta_query, (symbol,)).fetchone()
+            stock_df['Sector'] = result[0] if result else 'Unknown'
+            
             stock_df.drop(columns=['Symbol'], inplace=True, errors='ignore')
-
             return stock_df
 
     except Exception as e:
         print(f"--> DATABASE ERROR fetching data for {symbol}: {e}")
-        print("--> Make sure you have run 'python data_ingestion.py' first.")
         return pd.DataFrame()
