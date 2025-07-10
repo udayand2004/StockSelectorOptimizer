@@ -1,96 +1,69 @@
 import pandas as pd
-import yfinance as yf
-from flask_caching import Cache
-
-# Use FileSystemCache which is persistent and can be shared between processes
-cache = Cache(config={'CACHE_TYPE': 'FileSystemCache', 'CACHE_DIR': 'flask_cache'})
-
-STOCK_UNIVERSES = {
-    "NIFTY_50": [
-        'ADANIENT', 'ADANIPORTS', 'APOLLOHOSP', 'ASIANPAINT', 'AXISBANK', 'BAJAJ-AUTO', 'BAJFINANCE',
-        'BAJAJFINSV', 'BPCL', 'BHARTIARTL', 'BRITANNIA', 'CIPLA', 'COALINDIA', 'DIVISLAB', 'DRREDDY',
-        'EICHERMOT', 'GRASIM', 'HCLTECH', 'HDFCBANK', 'HDFCLIFE', 'HEROMOTOCO', 'HINDALCO', 'HINDUNILVR',
-        'ICICIBANK', 'ITC', 'INDUSINDBK', 'INFY', 'JSWSTEEL', 'KOTAKBANK', 'LTIM', 'LT', 'M&M',
-        'MARUTI', 'NTPC', 'NESTLEIND', 'ONGC', 'POWERGRID', 'RELIANCE', 'SBILIFE', 'SBIN', 'SUNPHARMA',
-        'TCS', 'TATACONSUM', 'TATAMOTORS', 'TATASTEEL', 'TECHM', 'TITAN', 'UPL', 'ULTRACEMCO', 'WIPRO'
-    ],
-    "NIFTY_NEXT_50": [
-        'ACC', 'ADANIENSOL', 'ADANIGREEN', 'AMBUJACEM', 'DMART', 'BAJAJHLDNG', 'BANKBARODA', 'BERGEPAINT', 'BEL',
-        'BOSCHLTD', 'CHOLAFIN', 'COLPAL', 'DLF', 'DABUR', 'GAIL', 'GODREJCP', 'HAVELLS', 'HAL', 'ICICIGI',
-        'ICICIPRULI', 'IOC', 'IGL', 'INDIGO', 'JSWENERGY', 'LICI', 'MARICO', 'MOTHERSON', 'MUTHOOTFIN',
-        'NAUKRI', 'PIDILITIND', 'PEL', 'PNB', 'PGHH', 'SIEMENS', 'SBICARD', 'SHREECEM', 'SRF',
-        'TATAPOWER', 'TVSMOTOR', 'TRENT', 'VEDL', 'VBL', 'ZEEL', 'ZOMATO'
-    ]
-}
-
-# --- MODIFIED SECTION ---
-# Add the memoize decorator to cache the results of this function.
-# Timeout is set to 12 hours (43200 seconds).
-@cache.memoize(timeout=43200)
-def get_historical_data(symbol, start_date, end_date):
-    """
-    Fetches historical data. Handles both individual stocks (e.g., 'RELIANCE')
-    and index symbols (e.g., '^NSEI') correctly.
-    """
-    nifty_symbol = "^NSEI" # The benchmark is always NIFTY 50
-
-    # --- START OF MODIFIED LOGIC ---
-    # Check if the requested symbol is an index or a stock
-    if symbol.startswith('^'):
-        # If it's an index, it's the only ticker we need to download.
-        ticker_to_download_main = symbol
-        tickers_for_yfinance = [ticker_to_download_main]
-    else:
-        # If it's a stock, append .NS and download it along with the NIFTY benchmark
-        ticker_to_download_main = f"{symbol}.NS"
-        tickers_for_yfinance = [ticker_to_download_main, nifty_symbol]
-    # --- END OF MODIFIED LOGIC ---
-    
-    print(f"--- [CACHE MISS] Fetching fresh data for {tickers_for_yfinance} from {start_date} to {end_date} ---")
-    
-    try:
-        all_data = yf.download(tickers_for_yfinance, start=start_date, end=end_date, progress=False, auto_adjust=True)
-
-        # Handle cases where data is not available
-        if isinstance(all_data.columns, pd.MultiIndex):
-            # If multiple tickers were downloaded, check the main one
-            if ticker_to_download_main not in all_data['Close'].columns or all_data['Close'][ticker_to_download_main].isnull().all():
-                print(f"--> WARNING: Data for {ticker_to_download_main} could not be downloaded. Skipping.")
-                return pd.DataFrame()
-        elif all_data.empty:
-            print(f"--> WARNING: Data for {ticker_to_download_main} could not be downloaded. Skipping.")
-            return pd.DataFrame()
-
-        # Data cleaning
-        all_data.index = pd.to_datetime(all_data.index)
-        if not all_data.index.is_unique:
-            all_data = all_data.loc[~all_data.index.duplicated(keep='first')]
-        all_data.sort_index(inplace=True)
-
-        # If we downloaded multiple tickers, extract the main one and calculate relative strength
-        if isinstance(all_data.columns, pd.MultiIndex):
-            stock_data = all_data.loc[:, (slice(None), ticker_to_download_main)].copy()
-            stock_data.columns = stock_data.columns.droplevel(1)
-            stock_close = all_data['Close'][ticker_to_download_main]
-            nifty_close = all_data['Close'][nifty_symbol]
-            stock_data['Relative_Strength'] = (stock_close / nifty_close)
-        else:
-            # If we only downloaded one ticker (an index), just use it
-            stock_data = all_data.copy()
-            stock_data['Relative_Strength'] = 1.0 # An index has a relative strength of 1 to itself
-
-        # Add Sector Info (will be 'Unknown' for an index, which is fine)
-        try:
-            ticker_info = yf.Ticker(ticker_to_download_main).info
-            stock_data['Sector'] = ticker_info.get('sector', 'Unknown')
-        except Exception:
-            stock_data['Sector'] = 'Unknown'
-        
-        return stock_data.dropna(subset=['Open', 'High', 'Low', 'Close'])
-
-    except Exception as e:
-        print(f"--> CRITICAL ERROR fetching data for {ticker_to_download_main}: {e}")
-        return pd.DataFrame()
+import sqlite3
+from .config import DB_FILE, STOCK_UNIVERSES
 
 def get_stock_universe(universe_name="NIFTY_50"):
     return STOCK_UNIVERSES.get(universe_name, [])
+
+def get_historical_data(symbol, start_date, end_date):
+    """
+    Fetches historical data for a given symbol and date range FROM THE DATABASE.
+    This version contains the definitive fix for the benchmark data issue.
+    """
+    start_str = pd.to_datetime(start_date).strftime('%Y-%m-%d')
+    end_str = pd.to_datetime(end_date).strftime('%Y-%m-%d')
+    
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            # Query for the requested symbol's price data
+            query = "SELECT * FROM historical_prices WHERE Symbol = ? AND Date BETWEEN ? AND ?"
+            stock_df = pd.read_sql_query(query, conn, params=(symbol, start_str, end_str))
+
+            if stock_df.empty:
+                return pd.DataFrame()
+
+            # --- Data Cleaning and Formatting ---
+            stock_df['Date'] = pd.to_datetime(stock_df['Date'])
+            stock_df.set_index('Date', inplace=True)
+
+            # --- Logic for Relative Strength and Sector ---
+            if symbol == '^NSEI':
+                # If the requested symbol is the benchmark itself:
+                # Relative strength is 1, Sector is 'Index'
+                stock_df['Relative_Strength'] = 1.0
+                stock_df['Sector'] = 'Index'
+            else:
+                # If it's a regular stock, we need to fetch Nifty data to compare.
+                nifty_query = "SELECT Date, Close FROM historical_prices WHERE Symbol = '^NSEI' AND Date BETWEEN ? AND ?"
+                nifty_df = pd.read_sql_query(nifty_query, conn, params=(start_str, end_str))
+                
+                if not nifty_df.empty:
+                    nifty_df['Date'] = pd.to_datetime(nifty_df['Date'])
+                    nifty_df.set_index('Date', inplace=True)
+                    nifty_df.rename(columns={'Close': 'Nifty_Close'}, inplace=True)
+                    
+                    # Join benchmark data with stock data
+                    stock_df = stock_df.join(nifty_df, how='left')
+                    stock_df['Relative_Strength'] = stock_df['Close'] / stock_df['Nifty_Close']
+                    stock_df.drop(columns=['Nifty_Close'], inplace=True, errors='ignore')
+                    # Fill any gaps that might arise from the join
+                    stock_df['Relative_Strength'].fillna(method='ffill', inplace=True)
+                else:
+                    # Fallback if Nifty data is missing for the period
+                    stock_df['Relative_Strength'] = 1.0
+
+                # Fetch Sector information for the stock
+                meta_query = "SELECT Sector FROM stock_metadata WHERE Symbol = ?"
+                cursor = conn.cursor()
+                result = cursor.execute(meta_query, (symbol,)).fetchone()
+                stock_df['Sector'] = result[0] if result else 'Unknown'
+
+            # Final cleanup
+            stock_df.drop(columns=['Symbol'], inplace=True, errors='ignore')
+
+            return stock_df
+
+    except Exception as e:
+        print(f"--> DATABASE ERROR fetching data for {symbol}: {e}")
+        print("--> Make sure you have run 'python data_ingestion.py' first.")
+        return pd.DataFrame()

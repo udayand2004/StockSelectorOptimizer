@@ -1,7 +1,6 @@
 import os
 import joblib
 from flask import Flask
-from .data_fetcher import cache
 from celery import Celery, Task
 
 def celery_init_app(app: Flask) -> Celery:
@@ -27,19 +26,16 @@ def create_app():
             task_ignore_result=False,
         ),
     )
-
-    # --- MODIFIED SECTION ---
-    # DO NOT load the model here. We will load it on-demand in the route.
-    # This prevents the Celery fork/deadlock issue.
+    
+    # We no longer need to initialize the cache here.
+    
     model_path = 'app/stock_selector_model.joblib'
-    app.stock_model = None # Initialize as None
-    app.model_path = model_path # Store the path for later
+    app.stock_model = None 
+    app.model_path = model_path 
     if not os.path.exists(model_path):
         print("WARNING: Production ML model not found. Live analysis will be disabled.")
-    # --- END MODIFIED SECTION ---
 
-    # Initialize extensions
-    cache.init_app(app)
+    # Initialize Celery
     celery_init_app(app)
 
     with app.app_context():

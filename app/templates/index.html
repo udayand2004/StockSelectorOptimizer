@@ -14,7 +14,7 @@
 
 <!-- Tab Content -->
 <div class="tab-content pt-3" id="mainTabContent">
-    <!-- Live Analysis Pane (Unchanged) -->
+    <!-- Live Analysis Pane -->
     <div class="tab-pane fade show active" id="live-analysis-pane" role="tabpanel" aria-labelledby="live-analysis-tab">
         <div class="row">
             <div class="col-lg-4">
@@ -67,7 +67,7 @@
         </div>
     </div>
 
-    <!-- Backtesting Pane (NEW, UPDATED STRUCTURE) -->
+    <!-- Backtesting Pane -->
     <div class="tab-pane fade" id="backtesting-pane" role="tabpanel" aria-labelledby="backtesting-tab">
         <div class="row">
             <!-- Left Column: Backtest Config -->
@@ -105,22 +105,35 @@
                             <p class="text-muted">Configure and run a backtest to see the performance report.</p>
                         </div>
 
-                        <!-- Placeholders for integrated results -->
                         <div id="backtestResultContainer" style="display: none;">
                             <!-- Key Metrics Row -->
-                            <div class="row text-center mb-4">
-                                <div class="col"><div class="card h-100"><div class="card-body"><h5 id="cagrValue" class="card-title">-</h5><p class="card-text text-muted small">CAGR</p></div></div></div>
-                                <div class="col"><div class="card h-100"><div class="card-body"><h5 id="sharpeValue" class="card-title">-</h5><p class="card-text text-muted small">Sharpe</p></div></div></div>
-                                <div class="col"><div class="card h-100"><div class="card-body"><h5 id="drawdownValue" class="card-title">-</h5><p class="card-text text-muted small">Max Drawdown</p></div></div></div>
-                                <div class="col"><div class="card h-100"><div class="card-body"><h5 id="calmarValue" class="card-title">-</h5><p class="card-text text-muted small">Calmar</p></div></div></div>
+                            <div class="row text-center mb-4 g-3">
+                                <div class="col-lg-3 col-6"><div class="card h-100"><div class="card-body"><h5 id="cagrValue" class="card-title">-</h5><p class="card-text text-muted small">CAGR</p></div></div></div>
+                                <div class="col-lg-3 col-6"><div class="card h-100"><div class="card-body"><h5 id="sharpeValue" class="card-title">-</h5><p class="card-text text-muted small">Sharpe</p></div></div></div>
+                                <div class="col-lg-3 col-6"><div class="card h-100"><div class="card-body"><h5 id="drawdownValue" class="card-title">-</h5><p class="card-text text-muted small">Max Drawdown</p></div></div></div>
+                                <div class="col-lg-3 col-6"><div class="card h-100"><div class="card-body"><h5 id="calmarValue" class="card-title">-</h5><p class="card-text text-muted small">Calmar</p></div></div></div>
+                                <div class="col-lg-3 col-6"><div class="card h-100"><div class="card-body"><h5 id="betaValue" class="card-title">-</h5><p class="card-text text-muted small">Beta</p></div></div></div>
+                                <div class="col-lg-3 col-6"><div class="card h-100"><div class="card-body"><h5 id="sortinoValue" class="card-title">-</h5><p class="card-text text-muted small">Sortino</p></div></div></div>
+                                <div class="col-lg-3 col-6"><div class="card h-100"><div class="card-body"><h5 id="varValue" class="card-title">-</h5><p class="card-text text-muted small">Daily VaR (95%)</p></div></div></div>
+                                <div class="col-lg-3 col-6"><div class="card h-100"><div class="card-body"><h5 id="cvarValue" class="card-title">-</h5><p class="card-text text-muted small">Daily CVaR (95%)</p></div></div></div>
                             </div>
-                            <!-- Equity Curve Chart -->
-                            <div id="backtestEquityChart" class="mt-4" style="min-height: 400px;"></div>
                             
-                            <!-- Drawdown Chart -->
+                            <!-- Charts -->
+                            <div id="backtestEquityChart" class="mt-4" style="min-height: 400px;"></div>
                             <div id="backtestDrawdownChart" class="mt-4" style="min-height: 250px;"></div>
-                        </div>
 
+                            <!-- Returns Tables -->
+                            <div class="row mt-5">
+                                <div class="col-lg-8">
+                                    <h5>Monthly Returns (%)</h5>
+                                    <div id="monthlyReturnsTable" class="table-responsive small"></div>
+                                </div>
+                                <div class="col-lg-4">
+                                    <h5>Yearly Returns (%)</h5>
+                                    <div id="yearlyReturnsTable" class="table-responsive"></div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

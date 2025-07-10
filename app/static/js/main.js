@@ -13,7 +13,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function showLoader() { loader.style.display = 'block'; }
     function hideLoader() { loader.style.display = 'none'; }
-    
+
     function clearResults() {
         stockPicksDiv.innerHTML = '<p class="text-muted">Run analysis to see results.</p>';
         rationaleDiv.innerHTML = '<p class="text-muted">Run analysis to generate the portfolio rationale.</p>';
@@ -30,7 +30,7 @@ document.addEventListener('DOMContentLoaded', function() {
     async function runFullAnalysis() {
         showLoader();
         clearResults();
-        
+
         const config = {
             universe: document.getElementById('universeSelector').value,
             top_n: document.getElementById('topNInput').value,
@@ -51,7 +51,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 displayError(data.error || `An unknown error occurred (Status: ${response.status}).`);
                 return;
             }
-            
+
             updateStockPicks(data.top_stocks);
             updateRationale(data.rationale);
             plotPortfolioPie(data.optimal_weights);
@@ -108,7 +108,7 @@ document.addEventListener('DOMContentLoaded', function() {
         Plotly.newPlot(sectorBarChart, data, layout, {responsive: true});
     }
 
-    // --- BACKTESTING LOGIC (NEW, INTEGRATED VERSION) ---
+    // --- BACKTESTING LOGIC (INTEGRATED AND FINAL) ---
     const runBacktestBtn = document.getElementById('runBacktestBtn');
     let pollingInterval;
 
@@ -116,14 +116,51 @@ document.addEventListener('DOMContentLoaded', function() {
         runBacktestBtn.addEventListener('click', runBacktest);
     }
     
+    function createReturnsTable(tableDataJson, tableContainerId) {
+        const container = document.getElementById(tableContainerId);
+        if (!tableDataJson) {
+            container.innerHTML = '<p class="text-muted">No data available.</p>';
+            return;
+        }
+        
+        try {
+            const tableData = JSON.parse(tableDataJson);
+            let tableHtml = '<table class="table table-sm table-bordered table-hover text-center">';
+            // Header
+            tableHtml += '<thead><tr><th>' + (tableData.index.name || 'Year') + '</th>';
+            tableData.columns.forEach(col => {
+                tableHtml += `<th>${col}</th>`;
+            });
+            tableHtml += '</tr></thead>';
+            // Body
+            tableHtml += '<tbody>';
+            tableData.index.forEach((year, i) => {
+                tableHtml += `<tr><th>${year}</th>`;
+                tableData.data[i].forEach(val => {
+                    const value = (val * 100).toFixed(2);
+                    const colorClass = value > 0.01 ? 'text-success' : (value < -0.01 ? 'text-danger' : '');
+                    tableHtml += `<td class="${colorClass}">${value}</td>`;
+                });
+                tableHtml += '</tr>';
+            });
+            tableHtml += '</tbody></table>';
+            container.innerHTML = tableHtml;
+        } catch(e) {
+            console.error("Failed to parse or build table:", e);
+            container.innerHTML = '<p class="text-danger">Error rendering table.</p>';
+        }
+    }
+
     function resetBacktestUI() {
         document.getElementById('backtestResultContainer').style.display = 'none';
         Plotly.purge('backtestEquityChart');
         Plotly.purge('backtestDrawdownChart');
-        document.getElementById('cagrValue').innerText = '-';
-        document.getElementById('sharpeValue').innerText = '-';
-        document.getElementById('drawdownValue').innerText = '-';
-        document.getElementById('calmarValue').innerText = '-';
+        const kpiIds = ['cagrValue', 'sharpeValue', 'drawdownValue', 'calmarValue', 'betaValue', 'sortinoValue', 'varValue', 'cvarValue'];
+        kpiIds.forEach(id => {
+            document.getElementById(id).innerText = '-';
+        });
+        document.getElementById('monthlyReturnsTable').innerHTML = '';
+        document.getElementById('yearlyReturnsTable').innerHTML = '';
     }
 
     function runBacktest() {
@@ -162,7 +199,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-        function pollTaskStatus(taskId) {
+    function pollTaskStatus(taskId) {
         const backtestStatusDiv = document.getElementById('backtestStatus');
 
         pollingInterval = setInterval(() => {
@@ -177,7 +214,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     clearInterval(pollingInterval);
                     backtestStatusDiv.innerHTML = `<div class="error-message"><strong>Backtest Failed:</strong><br><pre>${data.status}</pre></div>`;
                 } else {
-                    // <<< MODIFIED: This block now handles PENDING and PROGRESS states
                     let statusMessage = 'Processing...';
                     if (data.state === 'PROGRESS' && data.status) {
                         statusMessage = data.status;
@@ -213,39 +249,34 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('sharpeValue').innerText = results.kpis.Sharpe;
         document.getElementById('drawdownValue').innerText = results.kpis.Max_Drawdown;
         document.getElementById('calmarValue').innerText = results.kpis.Calmar;
+        document.getElementById('betaValue').innerText = results.kpis.Beta;
+        document.getElementById('sortinoValue').innerText = results.kpis.Sortino;
+        document.getElementById('varValue').innerText = results.kpis.VaR;
+        document.getElementById('cvarValue').innerText = results.kpis.CVaR;
         
         const equityTrace = {
-            x: results.charts.equity.dates,
-            y: results.charts.equity.portfolio,
-            mode: 'lines', name: 'Strategy',
-            line: { color: '#0d6efd', width: 2 }
+            x: results.charts.equity.dates, y: results.charts.equity.portfolio, mode: 'lines', name: 'Strategy', line: { color: '#0d6efd', width: 2 }
         };
         const benchmarkTrace = {
-            x: results.charts.equity.dates,
-            y: results.charts.equity.benchmark,
-            mode: 'lines', name: 'Benchmark (NIFTY 50)',
-            line: { color: '#6c757d', dash: 'dot', width: 1.5 }
+            x: results.charts.equity.dates, y: results.charts.equity.benchmark, mode: 'lines', name: 'Benchmark (NIFTY 50)', line: { color: '#6c757d', dash: 'dot', width: 1.5 }
         };
         const equityLayout = {
-            title: 'Strategy vs. Benchmark Performance (Log Scale)',
-            yaxis: { title: 'Cumulative Growth', type: 'log' },
-            legend: { x: 0.01, y: 0.99 },
-            margin: { t: 40, b: 40, l: 60, r: 20 }
+            title: 'Strategy vs. Benchmark Performance (Log Scale)', yaxis: { title: 'Cumulative Growth', type: 'log' }, legend: { x: 0.01, y: 0.99 }, margin: { t: 40, b: 40, l: 60, r: 20 }
         };
         Plotly.newPlot('backtestEquityChart', [equityTrace, benchmarkTrace], equityLayout, {responsive: true});
 
         const drawdownTrace = {
-            x: results.charts.drawdown.dates,
-            y: results.charts.drawdown.values,
-            type: 'scatter', mode: 'lines', fill: 'tozeroy',
-            name: 'Drawdown', line: { color: '#dc3545' }
+            x: results.charts.drawdown.dates, y: results.charts.drawdown.values, type: 'scatter', mode: 'lines', fill: 'tozeroy', name: 'Drawdown', line: { color: '#dc3545' }
         };
         const drawdownLayout = {
-            title: 'Strategy Drawdowns',
-            yaxis: { title: 'Drawdown (%)' },
-            margin: { t: 40, b: 40, l: 60, r: 20 }
+            title: 'Strategy Drawdowns', yaxis: { title: 'Drawdown (%)' }, margin: { t: 40, b: 40, l: 60, r: 20 }
         };
         Plotly.newPlot('backtestDrawdownChart', [drawdownTrace], drawdownLayout, {responsive: true});
+        
+        if (results.tables) {
+            createReturnsTable(results.tables.monthly_returns, 'monthlyReturnsTable');
+            createReturnsTable(results.tables.yearly_returns, 'yearlyReturnsTable');
+        }
 
         container.style.display = 'block';
     }
