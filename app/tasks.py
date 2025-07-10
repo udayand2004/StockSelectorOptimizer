@@ -2,24 +2,28 @@ from celery import shared_task
 from .backtesting import run_backtest as run_backtest_logic
 import traceback
 
+# --- THIS IS THE FIX ---
+# Add 'risk_free_rate' to the function's arguments
 @shared_task(bind=True)
-def run_backtest_task(self, start_date_str, end_date_str, universe_name, top_n, rebalance_freq):
+def run_backtest_task(self, start_date_str, end_date_str, universe_name, top_n, risk_free_rate):
+# --- END OF FIX ---
     """Celery task that reports progress back to the frontend."""
     
-    # <<< ADDED: Define a callback function that updates the task state
     def progress_callback(message):
         self.update_state(state='PROGRESS', meta={'status': message})
 
     try:
-        # Pass the callback to the backtesting engine
+        # Pass the new argument down to the backtesting logic
         results_dict = run_backtest_logic(
-            start_date_str, end_date_str, universe_name, top_n, rebalance_freq,
+            start_date_str=start_date_str, 
+            end_date_str=end_date_str, 
+            universe_name=universe_name, 
+            top_n=top_n,
+            risk_free_rate=risk_free_rate, # This line was already correct
             progress_callback=progress_callback
         )
-        
-        # The task is successful. The entire dictionary is the result.
-        return {'state': 'SUCCESS', 'status': 'Backtest complete!', 'result': results_dict}
+        return results_dict
     
     except Exception as e:
         traceback.print_exc()
-        return {'state': 'FAILURE', 'status': str(e)}
+        raise e

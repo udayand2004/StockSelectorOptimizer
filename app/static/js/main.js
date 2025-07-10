@@ -147,10 +147,20 @@ document.addEventListener('DOMContentLoaded', function() {
         createReturnsTable(results.tables.monthly_returns, 'monthlyReturnsTable');
         createReturnsTable(results.tables.yearly_returns, 'yearlyReturnsTable');
         createRebalanceLogTable(results.logs);
-        createFullMetricsTable(results.kpis); // NEW
+        createFullMetricsTable(results.kpis);
+        // NEW: Display the AI report
+        const aiReportContainer = document.getElementById('aiReportContainer');
+        if (results.ai_report) {
+        // A simple library like 'showdown' or 'marked' would be better for production
+        // For now, we'll just replace newlines with <br> for basic formatting
+        aiReportContainer.innerHTML = results.ai_report.replace(/\n/g, '<br>');
+        } else {
+        aiReportContainer.innerHTML = '<p class="text-muted small">AI report was not generated.</p>';
+        }
 
         container.style.display = 'block';
     }
+    
 
     // --- UNCHANGED FUNCTIONS (Copying them here to make the file complete) ---
     function runBacktest() {

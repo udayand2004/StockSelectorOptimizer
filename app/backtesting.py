@@ -6,57 +6,85 @@ from datetime import date
 from dateutil.relativedelta import relativedelta
 import joblib
 import json
+import lightgbm as lgb
 
 from .data_fetcher import get_stock_universe, get_historical_data
 from .ml_models import optimize_portfolio, get_portfolio_sector_exposure
-# This must be the modified version of strategy.py that accepts two arguments
-from .strategy import generate_all_features 
+from .strategy import generate_all_features
+from .reporting import generate_gemini_report # Import the new AI function
 
-# Helper function to make the final results dictionary JSON-safe for Celery
 def to_json_safe(obj):
-    if isinstance(obj, (np.integer, np.int64)): return int(obj)
-    if isinstance(obj, (np.floating, np.float64)): return float(obj)
+    if isinstance(obj, np.generic): return obj.item()
     if isinstance(obj, (np.ndarray,)): return obj.tolist()
     if isinstance(obj, pd.Timestamp): return obj.isoformat()
     if isinstance(obj, pd.Index): return obj.tolist()
     raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
 
-def run_backtest(start_date_str, end_date_str, universe_name, top_n, rebalance_freq='BMS', progress_callback=None):
+def run_backtest(start_date_str, end_date_str, universe_name, top_n, risk_free_rate, rebalance_freq='BMS', progress_callback=None):
     def log_progress(message):
         if progress_callback: progress_callback(message)
 
-    log_progress("--- [Backtest Engine] Initializing (Bias-Aware Mode) ---")
-    model = joblib.load('app/stock_selector_model.joblib')
-    all_symbols = get_stock_universe(universe_name)
-    earliest_date = pd.to_datetime(start_date_str) - relativedelta(days=400)
-
-    # --- BIAS-FREE DATA LOADING ---
-    # Load all raw data for the entire period + buffer once at the start.
-    log_progress("--- [Backtest Engine] Loading all raw data from DB... ---")
-    master_raw_data = {}
-    for symbol in tqdm(all_symbols, desc="Loading Stock Data"):
-        df = get_historical_data(symbol, earliest_date, end_date_str)
-        if not df.empty: master_raw_data[symbol] = df
+    log_progress("--- [Backtest Engine] Initializing (Walk-Forward Mode) ---")
     
-    # Load benchmark data for the entire period just once.
+    # We no longer load a single model. The model will be trained on the fly.
+    all_symbols = get_stock_universe(universe_name)
+    earliest_date = pd.to_datetime(start_date_str) - relativedelta(years=5) # Need 5 years for initial training
+
+    log_progress("--- [Backtest Engine] Loading all raw data from DB... ---")
+    master_raw_data = {
+        symbol: get_historical_data(symbol, earliest_date, end_date_str)
+        for symbol in tqdm(all_symbols, desc="Loading Stock Data")
+    }
+    master_raw_data = {k: v for k, v in master_raw_data.items() if not v.empty}
+    
     benchmark_master_df = get_historical_data('^NSEI', earliest_date, end_date_str)
     if benchmark_master_df.empty:
-        raise ValueError("Could not load master benchmark data. The backtest cannot proceed.")
-    # --- END OF DATA LOADING ---
+        raise ValueError("Could not load master benchmark data. Backtest cannot proceed.")
     
-    log_progress("--- [Backtest Engine] Data loading complete. Starting simulation... ---")
+    log_progress("--- [Backtest Engine] Starting Walk-Forward Simulation... ---")
     rebalance_dates = pd.date_range(start=start_date_str, end=end_date_str, freq=rebalance_freq)
     all_holdings = {}
     rebalance_logs = []
+    model = None
+    last_train_date = pd.Timestamp.min
+
     feature_cols = ['MA_20', 'MA_50', 'ROC_20', 'Volatility_20D', 'RSI', 'Relative_Strength', 'Momentum_3M', 'Momentum_6M', 'Momentum_12M', 'Sharpe_3M']
 
     for rebalance_date in tqdm(rebalance_dates, desc="Backtesting Progress"):
-        # Regime Filter uses a point-in-time slice of the master benchmark data.
+        # --- WALK-FORWARD MODEL TRAINING ---
+        # Retrain the model every year
+        if model is None or (rebalance_date - last_train_date).days > 365:
+            log_progress(f"--- Retraining model for date: {rebalance_date.date()} ---")
+            train_start = rebalance_date - relativedelta(years=3)
+            train_end = rebalance_date
+            
+            all_training_data = []
+            for symbol, raw_data in master_raw_data.items():
+                train_stock_slice = raw_data.loc[train_start:train_end]
+                train_bench_slice = benchmark_master_df.loc[train_start:train_end]
+                if len(train_stock_slice) < 252: continue
+                
+                features_df = generate_all_features(train_stock_slice, train_bench_slice)
+                training_ready_df = features_df.dropna(subset=['Target'] + feature_cols)
+                if not training_ready_df.empty:
+                    all_training_data.append(training_ready_df)
+
+            if all_training_data:
+                full_dataset = pd.concat(all_training_data)
+                X_train = full_dataset[feature_cols]
+                y_train = full_dataset['Target']
+                model = lgb.LGBMRegressor(objective='regression_l1', n_estimators=500, n_jobs=-1, random_state=42)
+                model.fit(X_train, y_train)
+                last_train_date = rebalance_date
+                log_progress("--- Model retraining complete. ---")
+            else:
+                log_progress("--- Not enough data for retraining, using previous model. ---")
+
+        # --- REBALANCING LOGIC (Unchanged, but now uses the freshly trained model) ---
         nifty_past_data = benchmark_master_df.loc[benchmark_master_df.index < rebalance_date]
         current_log = {'Date': rebalance_date.strftime('%Y-%m-%d'), 'Action': 'Hold Cash', 'Details': {}}
 
         if len(nifty_past_data) < 200:
-            current_log['Details'] = "Not enough market data for regime filter"
             all_holdings[rebalance_date] = {}; rebalance_logs.append(current_log); continue
         
         nifty_ma_200 = nifty_past_data['Close'].rolling(window=200).mean().iloc[-1]
@@ -64,41 +92,33 @@ def run_backtest(start_date_str, end_date_str, universe_name, top_n, rebalance_f
             current_log['Details'] = "Regime filter triggered (Market in Downtrend)"
             all_holdings[rebalance_date] = {}; rebalance_logs.append(current_log); continue
 
-        # --- BIAS-FREE FEATURE GENERATION ---
+        if model is None:
+            all_holdings[rebalance_date] = {}; rebalance_logs.append(current_log); continue
+
         predictions = {}
         for symbol, raw_data in master_raw_data.items():
-            # Create point-in-time slices for both the stock and the benchmark.
             stock_past_data = raw_data.loc[raw_data.index < rebalance_date]
-            benchmark_past_data = benchmark_master_df.loc[benchmark_master_df.index < rebalance_date]
-
             if len(stock_past_data) < 252: continue
-            
-            # The core bias fix: Pass BOTH point-in-time dataframes to the feature generator.
-            features_df = generate_all_features(stock_past_data, benchmark_past_data)
-            
+            features_df = generate_all_features(stock_past_data, nifty_past_data)
             if features_df.empty: continue
             latest_features = features_df[feature_cols].dropna()
-
             if not latest_features.empty:
-                prediction = model.predict(latest_features.tail(1))[0]
-                predictions[symbol] = prediction
+                predictions[symbol] = model.predict(latest_features.tail(1))[0]
         
         if not predictions:
-            current_log['Details'] = "ML model returned no valid predictions"
             all_holdings[rebalance_date] = {}; rebalance_logs.append(current_log); continue
 
         top_stocks = [s for s, p in sorted(predictions.items(), key=lambda item: item[1], reverse=True)[:top_n]]
         portfolio_data = {s: master_raw_data[s].loc[master_raw_data[s].index < rebalance_date] for s in top_stocks}
         
         if len(portfolio_data) >= 2:
-            weights = optimize_portfolio(portfolio_data, 0.06); all_holdings[rebalance_date] = weights
+            weights = optimize_portfolio(portfolio_data, risk_free_rate); all_holdings[rebalance_date] = weights
             current_log['Action'] = 'Rebalanced Portfolio'; current_log['Details'] = weights
-        else:
-            current_log['Details'] = "Not enough valid stocks to form a portfolio"
-            all_holdings[rebalance_date] = {}
+        else: all_holdings[rebalance_date] = {}
         rebalance_logs.append(current_log)
 
-    # --- FINAL REPORTING (This block is robust and does not need changes) ---
+    # --- FINAL REPORTING ---
+    log_progress("\n--- Calculating final performance metrics... ---")
     log_progress("\n--- [Backtest Engine] Calculating final performance metrics... ---")
     if not all_holdings:
         raise ValueError("No holdings were generated during the entire backtest period.")
@@ -176,7 +196,9 @@ def run_backtest(start_date_str, end_date_str, universe_name, top_n, rebalance_f
         
         sector_traces = [{'x': sector_exposure_df.index.strftime('%Y-%m-%d').tolist(), 'y': (sector_exposure_df[sector] * 100).tolist(), 'name': sector, 'type': 'bar'} for sector in sector_exposure_df.columns if sector_exposure_df[sector].sum() > 0]
         sector_layout = {'title': 'Historical Sector Exposure (%)', 'barmode': 'stack', 'yaxis': {'ticksuffix': '%'}, 'legend': {'traceorder': 'reversed'}}
-
+        log_progress("--- Generating AI Analysis Report... ---")
+        ai_report = generate_gemini_report(kpis.to_dict(), {}, yearly_returns_df['Strategy'].to_dict(), rebalance_logs)
+        log_progress("--- AI Report Generated. ---")
         results_payload = {
             "kpis": kpis.to_dict(),
             "charts": {

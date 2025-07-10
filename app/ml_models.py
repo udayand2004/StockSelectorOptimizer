@@ -8,14 +8,20 @@ from .strategy import generate_all_features
 
 def predict_top_stocks(model, symbols, top_n=10):
     """
-    Predicts top stocks for live analysis.
-    This version uses the full, updated feature set.
+    Predicts top stocks for live analysis using bias-free feature generation.
     """
     if model is None: return []
 
-    # Need enough data for 12-month momentum feature
     end_date = date.today()
     start_date = end_date - timedelta(days=400) 
+    
+    # --- THIS IS THE FIX ---
+    # Fetch benchmark data for the period once, just like in the backtester.
+    benchmark_df = get_historical_data('^NSEI', start_date, end_date)
+    if benchmark_df.empty:
+        print("--> ERROR: Could not fetch benchmark data for live analysis. Aborting.")
+        return []
+    # --- END OF FIX ---
     
     predictions = {}
     for symbol in symbols:
@@ -23,25 +29,22 @@ def predict_top_stocks(model, symbols, top_n=10):
         if data.empty:
             continue
 
-        all_features_df = generate_all_features(data)
+        # --- THIS IS THE FIX ---
+        # Pass both stock and benchmark data to the feature generator.
+        all_features_df = generate_all_features(data, benchmark_df)
+        # --- END OF FIX ---
         
-        # --- START OF MODIFIED SECTION ---
-        # THIS LIST MUST MATCH the lists in backtesting.py and train_and_save_model.py
         feature_cols = [
             'MA_20', 'MA_50', 'ROC_20', 'Volatility_20D', 'RSI', 'Relative_Strength',
             'Momentum_3M', 'Momentum_6M', 'Momentum_12M', 'Sharpe_3M'
         ]
-        # --- END OF MODIFIED SECTION ---
 
-        # Check if all required columns are present before trying to select them
         if not all(col in all_features_df.columns for col in feature_cols):
-            print(f"--> Skipping {symbol}: not all feature columns could be generated.")
             continue
             
         latest_features = all_features_df[feature_cols].dropna()
 
         if latest_features.empty:
-            print(f"--> Skipping {symbol}: not enough data to compute all features for prediction.")
             continue
         
         prediction = model.predict(latest_features.tail(1))[0]
@@ -52,8 +55,6 @@ def predict_top_stocks(model, symbols, top_n=10):
 
     sorted_stocks = sorted(predictions.items(), key=lambda item: item[1], reverse=True)
     return [stock[0] for stock in sorted_stocks[:top_n]]
-
-# --- The rest of the file is unchanged and correct ---
 
 def get_portfolio_data(symbols):
     end_date = date.today()
