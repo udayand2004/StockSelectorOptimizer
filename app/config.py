@@ -1,6 +1,7 @@
 # This file holds shared configuration variables to prevent circular imports.
 
 DB_FILE = "market_data.db"
+PORTFOLIOS_DB_FILE = "user_portfolios.db" 
 
 STOCK_UNIVERSES = {
     "NIFTY_50": [

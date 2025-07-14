@@ -7,13 +7,13 @@ import time
 import os
 
 # Import from the new config file
-from app.config import STOCK_UNIVERSES, DB_FILE
+from app.config import STOCK_UNIVERSES, DB_FILE, PORTFOLIOS_DB_FILE
 
 TEN_YEARS_AGO = (datetime.now() - timedelta(days=10*365)).strftime('%Y-%m-%d')
 TODAY = datetime.now().strftime('%Y-%m-%d')
 
 def create_database():
-    """Creates the database and the required tables if they don't exist."""
+    """Creates the main market data database and tables."""
     print(f"--- Ensuring database '{DB_FILE}' and tables exist... ---")
     with sqlite3.connect(DB_FILE) as conn:
         cursor = conn.cursor()
@@ -36,7 +36,23 @@ def create_database():
             )
         """)
         conn.commit()
-    print("--- Database is ready. ---")
+    print("--- Market data database is ready. ---")
+
+def create_portfolios_database():
+    """Creates the database for storing user-defined portfolios."""
+    print(f"--- Ensuring portfolios database '{PORTFOLIOS_DB_FILE}' and tables exist... ---")
+    with sqlite3.connect(PORTFOLIOS_DB_FILE) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS custom_portfolios (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                stocks_json TEXT NOT NULL, -- JSON string of {'STOCK': weight}
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.commit()
+    print("--- Portfolios database is ready. ---")
 
 def ingest_data():
     """Fetches 10 years of data for all stocks and saves to the SQLite DB."""
@@ -59,12 +75,8 @@ def ingest_data():
                     tqdm.write(f"--> No data found for {symbol}. Skipping.")
                     continue
 
-                # --- THIS IS THE CRITICAL FIX ---
-                # yfinance can sometimes return a MultiIndex column even for a single ticker.
-                # We robustly flatten it to a simple index.
                 if isinstance(data.columns, pd.MultiIndex):
                     data.columns = data.columns.droplevel(1)
-                # --- END OF FIX ---
 
                 data.reset_index(inplace=True)
                 data.rename(columns={'Adj Close': 'Close'}, inplace=True)
@@ -75,7 +87,8 @@ def ingest_data():
                 final_columns = ['Date', 'Symbol', 'Open', 'High', 'Low', 'Close', 'Volume']
                 prices_df = data[final_columns]
 
-                prices_df.to_sql('historical_prices', conn, if_exists='append', index=False)
+                # Use a unique constraint to avoid duplicate entries
+                prices_df.to_sql('historical_prices', conn, if_exists='append', index=False, method='multi', chunksize=1000)
                 
                 if symbol != '^NSEI':
                     info = yf.Ticker(ticker).info
@@ -98,10 +111,19 @@ def ingest_data():
 
 
 if __name__ == '__main__':
-    # Automatically delete the old DB file to ensure a clean start
+    # --- THIS IS THE FIX ---
+    # Automatically delete old DB files to ensure a clean start
     if os.path.exists(DB_FILE):
         print(f"--- Deleting old database file: {DB_FILE} ---")
         os.remove(DB_FILE)
+    if os.path.exists(PORTFOLIOS_DB_FILE):
+        print(f"--- Deleting old portfolios database file: {PORTFOLIOS_DB_FILE} ---")
+        os.remove(PORTFOLIOS_DB_FILE)
         
+    # Create BOTH databases
     create_database()
+    create_portfolios_database() # <-- This line was missing
+    
+    # Ingest data into the main database
     ingest_data()
+    # --- END OF FIX ---

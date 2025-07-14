@@ -5,7 +5,10 @@
 <!-- Tab Navigation -->
 <ul class="nav nav-tabs" id="mainTab" role="tablist">
     <li class="nav-item" role="presentation">
-        <button class="nav-link active" id="live-analysis-tab" data-bs-toggle="tab" data-bs-target="#live-analysis-pane" type="button" role="tab" aria-controls="live-analysis-pane" aria-selected="true">Live Analysis</button>
+        <button class="nav-link" id="live-analysis-tab" data-bs-toggle="tab" data-bs-target="#live-analysis-pane" type="button" role="tab" aria-controls="live-analysis-pane" aria-selected="false">Live Analysis</button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="portfolio-studio-tab" data-bs-toggle="tab" data-bs-target="#portfolio-studio-pane" type="button" role="tab" aria-controls="portfolio-studio-pane" aria-selected="true">Portfolio Studio</button>
     </li>
     <li class="nav-item" role="presentation">
         <button class="nav-link" id="backtesting-tab" data-bs-toggle="tab" data-bs-target="#backtesting-pane" type="button" role="tab" aria-controls="backtesting-pane" aria-selected="false">Strategy Backtesting</button>
@@ -14,8 +17,8 @@
 
 <!-- Tab Content -->
 <div class="tab-content pt-3" id="mainTabContent">
-    <!-- Live Analysis Pane (Your existing code for this section is fine) -->
-    <div class="tab-pane fade show active" id="live-analysis-pane" role="tabpanel" aria-labelledby="live-analysis-tab">
+    <!-- Live Analysis Pane -->
+    <div class="tab-pane fade" id="live-analysis-pane" role="tabpanel" aria-labelledby="live-analysis-tab">
         <div class="row">
             <div class="col-lg-4">
                 <div class="card mb-4">
@@ -66,22 +69,84 @@
             </div>
         </div>
     </div>
+    
+    <!-- Portfolio Studio Pane -->
+    <div class="tab-pane fade show active" id="portfolio-studio-pane" role="tabpanel" aria-labelledby="portfolio-studio-tab">
+        <div class="row">
+            <div class="col-lg-5">
+                <div class="card">
+                    <div class="card-header">Create a Custom Portfolio</div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label for="portfolioName" class="form-label">Portfolio Name</label>
+                            <input type="text" class="form-control" id="portfolioName" placeholder="e.g., My Core Holdings">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Select Stocks (from NIFTY 100)</label>
+                            <select id="stockSelector" class="form-select" multiple size="10">
+                                {% for symbol in all_stocks_for_studio %}
+                                <option value="{{ symbol }}">{{ symbol }}</option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text">Hold Ctrl/Cmd to select multiple stocks.</div>
+                        </div>
+                        <hr>
+                        <h6>Weighting Method</h6>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="weightMethod" id="hrpOptimized" value="hrp" checked>
+                            <label class="form-check-label" for="hrpOptimized">Optimize weights with HRP</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="weightMethod" id="manualWeights" value="manual">
+                            <label class="form-check-label" for="manualWeights">Set weights manually</label>
+                        </div>
+                        <div id="manualWeightsContainer" class="mt-3 p-3 border rounded bg-light" style="display:none; max-height: 250px; overflow-y: auto;">
+                        </div>
+                        <button id="savePortfolioBtn" class="btn btn-primary w-100 mt-3">Save Portfolio</button>
+                        <div id="portfolioSaveStatus" class="mt-2"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-7">
+                <div class="card">
+                    <div class="card-header">Saved Custom Portfolios</div>
+                    <div id="savedPortfoliosContainer" class="card-body">
+                        <p class="text-muted">Your saved portfolios will appear here.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- Backtesting Pane -->
     <div class="tab-pane fade" id="backtesting-pane" role="tabpanel" aria-labelledby="backtesting-tab">
         <div class="row">
-            <!-- Left Column: Backtest Config -->
             <div class="col-lg-4">
                 <div class="card mb-4">
                     <div class="card-header">Backtest Configuration</div>
                     <div class="card-body">
-                        <div class="mb-3">
+                         <div class="mb-3">
+                            <label for="backtestTypeSelector" class="form-label">Backtest Type</label>
+                            <select id="backtestTypeSelector" class="form-select">
+                                <option value="ml_strategy">ML-Driven Strategy</option>
+                                <option value="custom">Custom Saved Portfolio</option>
+                            </select>
+                        </div>
+                        <div id="mlStrategyOptions">
                             <label for="backtestUniverse" class="form-label">Investment Universe:</label>
                             <select id="backtestUniverse" class="form-select">
                                 {% for u in universes %}<option value="{{ u }}">{{ u.replace('_', ' ') }}</option>{% endfor %}
                             </select>
+                             <div class="alert alert-info small mt-3">
+                                Note: The ML Backtester uses "Number of Stocks to Pick" and "Risk-Free Rate" from the Live Analysis tab.
+                            </div>
                         </div>
-                        <div class="mb-3">
+                        <div id="customPortfolioOptions" style="display:none;">
+                             <label for="customPortfolioSelector" class="form-label">Select Portfolio:</label>
+                            <select id="customPortfolioSelector" class="form-select">
+                            </select>
+                        </div>
+                        <div class="mt-3">
                             <label for="backtestStartDate" class="form-label">Start Date:</label>
                             <input type="date" class="form-control" id="backtestStartDate" value="2022-01-01">
                         </div>
@@ -89,13 +154,9 @@
                             <label for="backtestEndDate" class="form-label">End Date:</label>
                             <input type="date" class="form-control" id="backtestEndDate" value="{{ current_date }}">
                         </div>
-                        <div class="alert alert-info small">
-                            Note: The backtester uses the "Number of Stocks to Pick" from the Live Analysis tab.
-                        </div>
                         <button id="runBacktestBtn" class="btn btn-success w-100">Run Backtest</button>
                     </div>
                 </div>
-                <!-- NEW: Full Metrics Snapshot -->
                 <div class="card mb-4">
                     <div class="card-header">Full Metrics Snapshot</div>
                     <div id="fullMetricsTableContainer" class="card-body table-responsive" style="max-height: 60vh; overflow-y: auto;">
@@ -103,17 +164,14 @@
                     </div>
                 </div>
             </div>
-            <!-- Right Column: Backtest Results -->
             <div class="col-lg-8">
                 <div class="card">
                     <div class="card-header">Backtest Performance Report</div>
-                    <div class="card-body">
+                    <div class="card-body" style="min-height: 80vh;">
                         <div id="backtestStatus" class="text-center p-5">
                             <p class="text-muted">Configure and run a backtest to see the performance report.</p>
                         </div>
-
                         <div id="backtestResultContainer" style="display: none;">
-                            <!-- Key Metrics Row -->
                             <h4 class="mb-3">Key Performance Indicators</h4>
                             <div class="row text-center mb-4 g-3">
                                 <div class="col-lg-3 col-6"><div class="card h-100"><div class="card-body"><h5 id="cagrValue" class="card-title">-</h5><p class="card-text text-muted small">CAGR (%)</p></div></div></div>
@@ -126,20 +184,14 @@
                                 <div class="col-lg-3 col-6"><div class="card h-100"><div class="card-body"><h5 id="cvarValue" class="card-title">-</h5><p class="card-text text-muted small">Daily CVaR</p></div></div></div>
                             </div>
                             <hr class="my-4">
-                            
-                            <!-- Performance Charts -->
                             <h4 class="mb-3 mt-4">Performance Charts</h4>
                             <div id="backtestEquityChart" style="min-height: 400px;"></div>
                             <div id="backtestDrawdownChart" class="mt-4" style="min-height: 250px;"></div>
                             <hr class="my-4">
-
-                            <!-- Historical Allocation Charts -->
                             <h4 class="mb-3 mt-4">Historical Allocation</h4>
                             <div id="historicalWeightsChart" style="min-height: 400px;"></div>
                             <div id="historicalSectorsChart" class="mt-4" style="min-height: 400px;"></div>
                             <hr class="my-4">
-
-                            <!-- Returns Tables -->
                             <h4 class="mb-3 mt-4">Returns Analysis</h4>
                             <div class="row">
                                 <div class="col-lg-8">
@@ -152,19 +204,16 @@
                                 </div>
                             </div>
                             <hr class="my-4">
-
-                            <!-- Rebalancing Logs -->
                             <div class="d-flex justify-content-between align-items-center mt-4">
                                 <h4 class="mb-0">Rebalancing Log</h4>
                                 <button id="downloadCsvBtn" class="btn btn-sm btn-outline-secondary">Download as CSV</button>
                             </div>
                             <div id="rebalanceLogContainer" class="table-responsive small mt-3" style="max-height: 400px;"></div>
                             <hr class="my-4">
-                            
-                            <!-- NEW: AI Analysis Report -->
                             <h4 class="mb-3 mt-4">AI-Powered Analysis</h4>
                             <div id="aiReportContainer" class="card card-body bg-light">
                                 <p class="text-muted small">Run a backtest to generate an AI-powered analysis of the results.</p>
+                            </div>
                         </div>
                     </div>
                 </div>
