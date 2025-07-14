@@ -36,6 +36,7 @@ def generate_gemini_report(kpis, monthly_returns, yearly_returns, rebalance_logs
         yearly_summary = "\n".join([f"- {year}: {ret:.2f}%" for year, ret in yearly_returns.items()])
         active_months = sum(1 for log in rebalance_logs if log['Action'] == 'Rebalanced Portfolio')
         total_months = len(rebalance_logs)
+        time_in_market_pct = (active_months / total_months * 100) if total_months > 0 else 0
         
         prompt = f"""
         As a quantitative analyst reviewing a new strategy for an internal team presentation, provide a constructive and objective evaluation of the following backtest report. The goal is to analyze the current results and identify key areas for refinement. Maintain a professional, forward-looking tone.
