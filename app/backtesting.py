@@ -1,3 +1,5 @@
+# app/backtesting.py
+
 import pandas as pd
 import numpy as np
 import quantstats as qs
@@ -27,30 +29,49 @@ def to_json_safe(obj):
 def generate_report_payload(portfolio_returns, benchmark_returns, holdings_df, master_raw_data, rebalance_logs, risk_free_rate):
     """
     A centralized function to generate the entire QuantStats report payload.
+    This version includes a critical fix to handle zero-trade scenarios.
     """
-    portfolio_returns.fillna(0, inplace=True)
-    benchmark_returns.fillna(0, inplace=True)
-    
-    combined = pd.merge(portfolio_returns, benchmark_returns, left_index=True, right_index=True, how='inner')
-    
-    if combined.empty or 'Strategy' not in combined.columns or combined['Strategy'].abs().sum() < 1e-9:
-        full_benchmark_equity = (1 + benchmark_returns.fillna(0)).cumprod()
+    # --- FIX 1: HANDLE ZERO-ACTIVITY STRATEGY ---
+    # This directly addresses the "Impossible Drawdown" and "Fictitious CAGR" bugs.
+    # If the holdings dataframe sum is zero, it means no trades were ever made.
+    if holdings_df.sum().sum() < 1e-9:
+        print("--- [Reporting] No trades were made. Generating a zero-performance report. ---")
+        start_date = holdings_df.index.min()
+        end_date = holdings_df.index.max()
+        
+        date_range = pd.date_range(start=start_date, end=end_date, freq='B')
+        strategy_equity = pd.Series(1.0, index=date_range)
+        benchmark_equity = (1 + benchmark_returns.fillna(0)).cumprod()
+
+        # Manually create a dictionary of correct, zeroed-out KPIs.
+        kpis = {
+            "CAGR﹪": 0.0, "Sharpe": 0.0, "Max Drawdown": 0.0,
+            "Sortino": 0.0, "Beta": 0.0, "Calmar": 0.0,
+            "Daily VaR": 0.0, "Daily CVaR": 0.0,
+            "Error": "Strategy did not execute any trades. This may be due to the regime filter always being active or the model never producing positive predictions."
+        }
+        
         return {
-            "kpis": {"Error": "No trades were made or no valid returns data for the selected period."},
+            "kpis": kpis,
             "charts": {
                 "equity": { "data": [
-                    {'x': full_benchmark_equity.index.strftime('%Y-%m-%d').tolist(), 'y': [1.0] * len(full_benchmark_equity), 'mode': 'lines', 'name': 'Strategy'},
-                    {'x': full_benchmark_equity.index.strftime('%Y-%m-%d').tolist(), 'y': full_benchmark_equity.values.tolist(), 'mode': 'lines', 'name': 'Benchmark (NIFTY 50)'}
+                    {'x': strategy_equity.index.strftime('%Y-%m-%d').tolist(), 'y': strategy_equity.values.tolist(), 'mode': 'lines', 'name': 'Strategy (No Trades)'},
+                    {'x': benchmark_equity.index.strftime('%Y-%m-%d').tolist(), 'y': benchmark_equity.values.tolist(), 'mode': 'lines', 'name': 'Benchmark (NIFTY 50)'}
                 ], "layout": {'title': 'Strategy vs. Benchmark Performance'} },
-                "drawdown": {"data": [], "layout": {'title': 'Strategy Drawdowns'}},
-                "historical_weights": {"data": [], "layout": {'title': 'Historical Stock Weights (%)'}},
-                "historical_sectors": {"data": [], "layout": {'title': 'Historical Sector Exposure (%)'}}
+                "drawdown": {"data": [], "layout": {'title': 'Strategy Drawdowns (No Trades)'}},
+                "historical_weights": {"data": [], "layout": {'title': 'Historical Stock Weights (No Trades)'}},
+                "historical_sectors": {"data": [], "layout": {'title': 'Historical Sector Exposure (No Trades)'}}
             },
             "tables": {"monthly_returns": "{}", "yearly_returns": "{}"},
             "logs": rebalance_logs,
-            "ai_report": "Not enough data for AI analysis."
+            "ai_report": "AI analysis skipped: The strategy did not make any trades, indicating a potential issue with the regime filter or the prediction model."
         }
+    # --- END OF FIX 1 ---
 
+    portfolio_returns.fillna(0, inplace=True)
+    benchmark_returns.fillna(0, inplace=True)
+    combined = pd.merge(portfolio_returns, benchmark_returns, left_index=True, right_index=True, how='inner')
+    
     portfolio_returns_clean = combined['Strategy']
     benchmark_returns_clean = combined['Benchmark']
     
@@ -97,40 +118,39 @@ def generate_report_payload(portfolio_returns, benchmark_returns, holdings_df, m
 
 def calculate_performance(holdings_df, master_raw_data, start_date_str, end_date_str, risk_free_rate, rebalance_logs):
     """
-    Centralized performance calculation function to ensure robustness against index errors.
+    Centralized performance calculation function.
     """
     log_progress = lambda message: print(message)
-
     log_progress("--- [Reporting] Starting performance calculation...")
 
     clean_date_index = pd.date_range(start=start_date_str, end=end_date_str, freq='B')
+    
+    benchmark_data = get_historical_data('^NSEI', start_date_str, end_date_str)
+    benchmark_returns = benchmark_data['Close'].pct_change(fill_method=None)
+    benchmark_returns.name = 'Benchmark'
+    
+    # Pass benchmark returns to the payload generator in case the strategy has no trades.
+    if holdings_df.sum().sum() < 1e-9:
+        return generate_report_payload(pd.Series(), benchmark_returns, holdings_df, master_raw_data, rebalance_logs, risk_free_rate)
 
     valid_cols = [col for col in holdings_df.columns if col in master_raw_data]
     price_df = pd.DataFrame({
         symbol: master_raw_data[symbol]['Close'] for symbol in valid_cols
     }).reindex(clean_date_index, method='ffill')
     
-    # --- ROBUSTNESS FIX 1: Ensure price index is sorted before calculating returns ---
     price_df.sort_index(inplace=True)
     returns_df = price_df.pct_change(fill_method=None)
     
-    # --- ROBUSTNESS FIX 2: Ensure holdings index is sorted before reindexing with ffill ---
-    # This is the most critical fix.
     holdings_df.sort_index(inplace=True)
     aligned_holdings = holdings_df.reindex(returns_df.index, method='ffill').fillna(0)
 
     TRANSACTION_COST_BPS = 15
     turnover = (aligned_holdings.shift(1).fillna(0) - aligned_holdings).abs().sum(axis=1) / 2
     transaction_costs = turnover * (TRANSACTION_COST_BPS / 10000)
-    portfolio_returns = (aligned_holdings * returns_df).sum(axis=1) - transaction_costs
+    portfolio_returns = (aligned_holdings * returns_df[aligned_holdings.columns]).sum(axis=1) - transaction_costs
     portfolio_returns.name = 'Strategy'
     
-    benchmark_data = get_historical_data('^NSEI', start_date_str, end_date_str)
-    benchmark_returns = benchmark_data['Close'].pct_change(fill_method=None)
-    benchmark_returns.name = 'Benchmark'
-    
     return generate_report_payload(portfolio_returns, benchmark_returns, holdings_df, master_raw_data, rebalance_logs, risk_free_rate)
-
 
 # --- BACKTESTER 1: ML-DRIVEN STRATEGY ---
 def run_backtest(start_date_str, end_date_str, universe_name, top_n, risk_free_rate, rebalance_freq='BMS', progress_callback=None):
@@ -161,28 +181,22 @@ def run_backtest(start_date_str, end_date_str, universe_name, top_n, risk_free_r
     feature_cols = ['MA_20', 'MA_50', 'ROC_20', 'Volatility_20D', 'RSI', 'Relative_Strength', 'Momentum_3M', 'Momentum_6M', 'Momentum_12M', 'Sharpe_3M']
 
     for rebalance_date in tqdm(rebalance_dates, desc="Backtesting Progress"):
-        # ... (The entire walk-forward loop remains the same) ...
-        # (No changes are needed inside this loop)
         if model is None or (rebalance_date - last_train_date).days > 365:
+            # ... Model retraining logic is correct ...
             log_progress(f"--- Retraining model for date: {rebalance_date.date()} ---")
             train_start = rebalance_date - relativedelta(years=3)
             train_end = rebalance_date
-            
             all_training_data = []
             for symbol, raw_data in master_raw_data.items():
                 train_stock_slice = raw_data.loc[train_start:train_end]
                 train_bench_slice = benchmark_master_df.loc[train_start:train_end]
                 if len(train_stock_slice) < 252: continue
-                
                 features_df = generate_all_features(train_stock_slice, train_bench_slice)
                 training_ready_df = features_df.dropna(subset=['Target'] + feature_cols)
-                if not training_ready_df.empty:
-                    all_training_data.append(training_ready_df)
-
+                if not training_ready_df.empty: all_training_data.append(training_ready_df)
             if all_training_data:
                 full_dataset = pd.concat(all_training_data)
-                X_train = full_dataset[feature_cols]
-                y_train = full_dataset['Target']
+                X_train, y_train = full_dataset[feature_cols], full_dataset['Target']
                 model = lgb.LGBMRegressor(objective='regression_l1', n_estimators=500, n_jobs=-1, random_state=42)
                 model.fit(X_train, y_train)
                 last_train_date = rebalance_date
@@ -190,19 +204,33 @@ def run_backtest(start_date_str, end_date_str, universe_name, top_n, risk_free_r
             else:
                 log_progress("--- Not enough data for retraining, using previous model. ---")
 
-        nifty_past_data = benchmark_master_df.loc[benchmark_master_df.index < rebalance_date]
+        # --- FIX 2: ROBUST REGIME FILTER ---
         current_log = {'Date': rebalance_date.strftime('%Y-%m-%d'), 'Action': 'Hold Cash', 'Details': {}}
+        try:
+            nifty_past_data = benchmark_master_df.loc[benchmark_master_df.index < rebalance_date]
+            if len(nifty_past_data) < 200:
+                current_log['Details'] = "Not enough market history for 200-day MA."
+                all_holdings[rebalance_date] = {}; rebalance_logs.append(current_log); continue
+            
+            last_price = nifty_past_data['Close'].iloc[-1]
+            nifty_ma_200 = nifty_past_data['Close'].rolling(window=200).mean().iloc[-1]
+            
+            if pd.isna(last_price) or pd.isna(nifty_ma_200):
+                 current_log['Details'] = "NaN value encountered in regime filter data."
+                 all_holdings[rebalance_date] = {}; rebalance_logs.append(current_log); continue
 
-        if len(nifty_past_data) < 200:
-            current_log['Details'] = "Not enough market data for regime filter"
-            all_holdings[rebalance_date] = {}; rebalance_logs.append(current_log); continue
+            # The core filter logic. If price is below the MA, hold cash.
+            if last_price < nifty_ma_200:
+                current_log['Details'] = f"Regime filter triggered: NIFTY Close ({last_price:.2f}) < 200-MA ({nifty_ma_200:.2f})"
+                all_holdings[rebalance_date] = {}; rebalance_logs.append(current_log); continue
         
-        nifty_ma_200 = nifty_past_data['Close'].rolling(window=200).mean().iloc[-1]
-        if nifty_past_data['Close'].iloc[-1] < nifty_ma_200:
-            current_log['Details'] = "Regime filter triggered (Market in Downtrend)"
+        except (IndexError, ValueError) as e:
+            current_log['Details'] = f"Error in regime filter calculation: {e}"
             all_holdings[rebalance_date] = {}; rebalance_logs.append(current_log); continue
+        # --- END OF FIX 2 ---
 
         if model is None:
+            current_log['Details'] = "ML model is not trained yet."
             all_holdings[rebalance_date] = {}; rebalance_logs.append(current_log); continue
 
         predictions = {}
@@ -211,29 +239,33 @@ def run_backtest(start_date_str, end_date_str, universe_name, top_n, risk_free_r
             benchmark_past_data = benchmark_master_df.loc[benchmark_master_df.index < rebalance_date]
             if len(stock_past_data) < 252: continue
             features_df = generate_all_features(stock_past_data, benchmark_past_data)
-            
             if features_df.empty: continue
             latest_features = features_df[feature_cols].dropna()
             if not latest_features.empty:
                 predictions[symbol] = model.predict(latest_features.tail(1))[0]
         
         if not predictions:
-            current_log['Details'] = "ML model returned no valid predictions"
+            current_log['Details'] = "ML model returned no valid predictions for this period."
             all_holdings[rebalance_date] = {}; rebalance_logs.append(current_log); continue
 
-        top_stocks = [s for s, p in sorted(predictions.items(), key=lambda item: item[1], reverse=True)[:top_n]]
+        top_stocks = [s for s, p in sorted(predictions.items(), key=lambda item: item[1], reverse=True) if p > 0][:top_n]
+        
+        if not top_stocks:
+            current_log['Details'] = "No stocks had positive predictions."
+            all_holdings[rebalance_date] = {}; rebalance_logs.append(current_log); continue
+
         portfolio_data = {s: master_raw_data[s].loc[master_raw_data[s].index < rebalance_date] for s in top_stocks}
         
         if len(portfolio_data) >= 2:
-            weights = optimize_portfolio(portfolio_data, risk_free_rate); all_holdings[rebalance_date] = weights
+            weights = optimize_portfolio(portfolio_data, risk_free_rate)
+            all_holdings[rebalance_date] = weights
             current_log['Action'] = 'Rebalanced Portfolio'; current_log['Details'] = weights
         else:
-            current_log['Details'] = "Not enough valid stocks to form a portfolio"
+            current_log['Details'] = "Not enough valid stocks with positive predictions to form a portfolio."
             all_holdings[rebalance_date] = {}
         rebalance_logs.append(current_log)
 
     holdings_df = pd.DataFrame.from_dict(all_holdings, orient='index').fillna(0)
-    # The call to calculate_performance will now receive a clean, sorted holdings_df
     return calculate_performance(holdings_df, master_raw_data, start_date_str, end_date_str, risk_free_rate, rebalance_logs)
 
 # --- BACKTESTER 2: CUSTOM PORTFOLIO ---
@@ -258,5 +290,4 @@ def run_custom_portfolio_backtest(holdings, start_date_str, end_date_str, risk_f
     holdings_df = pd.DataFrame([holdings] * len(rebalance_dates), index=rebalance_dates)
     rebalance_logs = [{'Date': date.strftime('%Y-%m-%d'), 'Action': 'Rebalanced to Custom Weights', 'Details': holdings} for date in rebalance_dates]
     
-    # The call to calculate_performance will now receive a clean, sorted holdings_df
     return calculate_performance(holdings_df, master_raw_data, start_date_str, end_date_str, risk_free_rate, rebalance_logs)

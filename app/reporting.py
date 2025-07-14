@@ -38,7 +38,7 @@ def generate_gemini_report(kpis, monthly_returns, yearly_returns, rebalance_logs
         total_months = len(rebalance_logs)
         
         prompt = f"""
-        As a professional quantitative analyst, provide a detailed and critical analysis of the following backtest report for an ML-based stock selection strategy. The strategy uses a market regime filter (200-day moving average on the NIFTY 50).
+        As a quantitative analyst reviewing a new strategy for an internal team presentation, provide a constructive and objective evaluation of the following backtest report. The goal is to analyze the current results and identify key areas for refinement. Maintain a professional, forward-looking tone.
 
         **Key Performance Indicators:**
         {kpi_summary}
@@ -47,14 +47,33 @@ def generate_gemini_report(kpis, monthly_returns, yearly_returns, rebalance_logs
         {yearly_summary}
         
         **Activity Log Summary:**
-        - The strategy was actively invested for {active_months} out of {total_months} rebalancing periods. The rest of the time it held cash due to the regime filter.
+        - The strategy was invested in the market for approximately {time_in_market_pct:.0f}% of the rebalancing periods ({active_months} out of {total_months}).
 
-        **Your analysis should cover the following points in structured markdown format:**
-        1.  **Performance Overview:** Give a summary of the strategy's performance. Is the CAGR impressive given the risk? How does the Sharpe ratio reflect risk-adjusted returns?
-        2.  **Risk Analysis:** Critically evaluate the Max Drawdown. Is it acceptable? How does the Sortino ratio compare to the Sharpe ratio, and what does this imply about downside risk? Comment on the Beta.
-        3.  **Consistency and Regime Filter:** Analyze the yearly returns. Are they consistent? Comment on the effectiveness of the market regime filter based on the activity log. Did it successfully avoid major market downturns?
-        4.  **Potential Concerns & Red Flags:** Based on all the data, what are the potential red flags? Is a Sharpe ratio of {kpis.get('Sharpe', 0):.2f} realistic? Could there still be overfitting?
-        5.  **Conclusion & Recommendations:** Provide a concluding paragraph on whether this strategy is promising and suggest next steps for improvement or validation.
+        **Your evaluation should be structured as follows:**
+
+        1.  **Performance Summary:**
+            - Objectively state the strategy's CAGR and Sharpe Ratio from the report.
+            - Briefly comment on the relationship between the absolute return (CAGR) and the risk-adjusted return (Sharpe Ratio).
+
+        2.  **Risk & Volatility Profile:**
+            - Discuss the observed Max Drawdown. What does this metric suggest about the strategy's risk during the backtest period?
+            - Comment on the reported Beta. What does a Beta of {kpis.get('Beta', 0):.2f} imply about the strategy's correlation to the market based on these results?
+
+        3.  **Strategy Behavior & Regime Filter:**
+            - Analyze the yearly returns for patterns or consistency.
+            - Based on the activity log ({time_in_market_pct:.0f}% time in market), comment on the behavior of the market regime filter. How did it influence the strategy's exposure during this specific historical period?
+
+        4.  **Observations & Key Areas for Improvement:**
+            - Based on the analysis, what are the most important observations?
+            - Point out any inconsistencies between different metrics (e.g., between CAGR and yearly returns, or Beta and strategy type) as areas for further validation in the backtesting engine.
+            - Suggest clear, actionable next steps for the team. Frame these as refinements rather than failures. For example:
+                - "Refine the regime filter to potentially improve market entry/exit timing."
+                - "Conduct a sensitivity analysis on the model's features."
+                - "Validate the calculation of key metrics like Beta and CAGR in the backtesting module to ensure they align with portfolio activity."
+                - "Incorporate a benchmark comparison (e.g., NIFTY 50) in future reports to better quantify alpha."
+
+        5.  **Overall Conclusion:**
+            - Provide a brief, forward-looking summary. Conclude that this backtest provides a valuable baseline and highlights specific areas for development to enhance the strategy's performance and robustness.
         """
         response = model.generate_content(prompt)
         print("--- AI report successfully generated. ---")
