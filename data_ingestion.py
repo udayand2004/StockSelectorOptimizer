@@ -8,7 +8,7 @@ import os
 
 # Import from the new config file
 from app.config import STOCK_UNIVERSES, DB_FILE, PORTFOLIOS_DB_FILE
-
+from app.factor_analysis import ingest_fama_french_data
 TEN_YEARS_AGO = (datetime.now() - timedelta(days=10*365)).strftime('%Y-%m-%d')
 TODAY = datetime.now().strftime('%Y-%m-%d')
 
@@ -127,3 +127,7 @@ if __name__ == '__main__':
     # Ingest data into the main database
     ingest_data()
     # --- END OF FIX ---
+    # --- ADD THIS LINE ---
+    # Ingest Fama-French factor data
+    ingest_fama_french_data()
+    # --- END OF ADDITION ---

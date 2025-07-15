@@ -9,7 +9,7 @@ from dateutil.relativedelta import relativedelta
 import joblib
 import json
 import lightgbm as lgb
-
+from . import factor_analysis
 from .data_fetcher import get_stock_universe, get_historical_data
 from .ml_models import optimize_portfolio, get_portfolio_sector_exposure
 from .strategy import generate_all_features
@@ -26,14 +26,14 @@ def to_json_safe(obj):
     raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
 
 # --- HELPER: SHARED REPORTING FUNCTION ---
+# In app/backtesting.py, find the generate_report_payload function and REPLACE it with this:
+
 def generate_report_payload(portfolio_returns, benchmark_returns, holdings_df, master_raw_data, rebalance_logs, risk_free_rate):
     """
     A centralized function to generate the entire QuantStats report payload.
     This version includes a critical fix to handle zero-trade scenarios.
     """
     # --- FIX 1: HANDLE ZERO-ACTIVITY STRATEGY ---
-    # This directly addresses the "Impossible Drawdown" and "Fictitious CAGR" bugs.
-    # If the holdings dataframe sum is zero, it means no trades were ever made.
     if holdings_df.sum().sum() < 1e-9:
         print("--- [Reporting] No trades were made. Generating a zero-performance report. ---")
         start_date = holdings_df.index.min()
@@ -43,7 +43,6 @@ def generate_report_payload(portfolio_returns, benchmark_returns, holdings_df, m
         strategy_equity = pd.Series(1.0, index=date_range)
         benchmark_equity = (1 + benchmark_returns.fillna(0)).cumprod()
 
-        # Manually create a dictionary of correct, zeroed-out KPIs.
         kpis = {
             "CAGR﹪": 0.0, "Sharpe": 0.0, "Max Drawdown": 0.0,
             "Sortino": 0.0, "Beta": 0.0, "Calmar": 0.0,
@@ -53,6 +52,7 @@ def generate_report_payload(portfolio_returns, benchmark_returns, holdings_df, m
         
         return {
             "kpis": kpis,
+            "factor_exposure": {"error": "Factor analysis not run because no trades were made."}, # Add placeholder
             "charts": {
                 "equity": { "data": [
                     {'x': strategy_equity.index.strftime('%Y-%m-%d').tolist(), 'y': strategy_equity.values.tolist(), 'mode': 'lines', 'name': 'Strategy (No Trades)'},
@@ -64,13 +64,13 @@ def generate_report_payload(portfolio_returns, benchmark_returns, holdings_df, m
             },
             "tables": {"monthly_returns": "{}", "yearly_returns": "{}"},
             "logs": rebalance_logs,
-            "ai_report": "AI analysis skipped: The strategy did not make any trades, indicating a potential issue with the regime filter or the prediction model."
+            "ai_report": "AI analysis skipped: The strategy did not make any trades."
         }
     # --- END OF FIX 1 ---
 
     portfolio_returns.fillna(0, inplace=True)
     benchmark_returns.fillna(0, inplace=True)
-    combined = pd.merge(portfolio_returns, benchmark_returns, left_index=True, right_index=True, how='inner')
+    combined = pd.merge(portfolio_returns.rename('Strategy'), benchmark_returns.rename('Benchmark'), left_index=True, right_index=True, how='inner')
     
     portfolio_returns_clean = combined['Strategy']
     benchmark_returns_clean = combined['Benchmark']
@@ -79,6 +79,12 @@ def generate_report_payload(portfolio_returns, benchmark_returns, holdings_df, m
     if 'Strategy' not in kpis_df.columns:
          raise ValueError("QuantStats failed to generate metrics for the strategy.")
     kpis = kpis_df.loc[:, 'Strategy']
+    
+    #
+    # --- THIS IS THE CORRECTED INDENTATION ---
+    #
+    # Perform Factor Exposure Analysis
+    factor_exposure_results = factor_analysis.analyze_factor_exposure(portfolio_returns_clean)
     
     drawdown_series = qs.stats.to_drawdown_series(portfolio_returns_clean)
     monthly_returns_df = qs.stats.monthly_returns(portfolio_returns_clean, compounded=True)
@@ -104,6 +110,7 @@ def generate_report_payload(portfolio_returns, benchmark_returns, holdings_df, m
     
     results_payload = {
         "kpis": kpis.to_dict(),
+        "factor_exposure": factor_exposure_results,  # Add factor results to the payload
         "charts": {
             "equity": { "data": [{'x': strategy_equity.index.strftime('%Y-%m-%d').tolist(), 'y': strategy_equity.values.tolist(), 'mode': 'lines', 'name': 'Strategy', 'line': {'color': '#0d6efd', 'width': 2}}, {'x': benchmark_equity.index.strftime('%Y-%m-%d').tolist(), 'y': benchmark_equity.values.tolist(), 'mode': 'lines', 'name': 'Benchmark (NIFTY 50)', 'line': {'color': '#6c757d', 'dash': 'dot', 'width': 1.5}}], "layout": {'title': 'Strategy vs. Benchmark Performance', 'yaxis': {'title': 'Cumulative Growth', 'type': 'log'}, 'legend': {'x': 0.01, 'y': 0.99}, 'margin': {'t': 40, 'b': 40, 'l': 60, 'r': 20}} },
             "drawdown": { "data": [{'x': drawdown_series.index.strftime('%Y-%m-%d').tolist(), 'y': (drawdown_series.values * 100).tolist(), 'type': 'scatter', 'mode': 'lines', 'fill': 'tozeroy', 'name': 'Drawdown', 'line': {'color': '#dc3545'}}], "layout": {'title': 'Strategy Drawdowns', 'yaxis': {'title': 'Drawdown (%)'}, 'margin': {'t': 40, 'b': 40, 'l': 60, 'r': 20}} },

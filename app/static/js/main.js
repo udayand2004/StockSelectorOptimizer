@@ -13,7 +13,71 @@ document.addEventListener('DOMContentLoaded', function() {
     const sectorBarChart = document.getElementById('sectorBarChart');
 
     if (runAnalysisBtn) { runAnalysisBtn.addEventListener('click', runFullAnalysis); }
-    
+    function displayFactorExposure(data) {
+    const chartContainer = document.getElementById('factorExposureChart');
+    const tableContainer = document.getElementById('factorExposureTable');
+
+    if (data.error) {
+        chartContainer.innerHTML = `<p class="text-danger small">${data.error}</p>`;
+        tableContainer.innerHTML = '';
+        return;
+    }
+
+    // 1. Create the Bar Chart for Betas
+    const betas = data.betas;
+    const labels = Object.keys(betas);
+    const values = Object.values(betas);
+    const colors = values.map(v => v >= 0 ? 'rgba(13, 110, 253, 0.7)' : 'rgba(220, 53, 69, 0.7)');
+
+    const plotData = [{
+        x: labels,
+        y: values,
+        type: 'bar',
+        marker: { color: colors },
+        text: values.map(v => v.toFixed(3)),
+        textposition: 'auto'
+    }];
+    const layout = {
+        title: 'Factor Betas',
+        yaxis: { title: 'Beta', zeroline: true },
+        xaxis: { tickangle: -20 },
+        margin: { t: 40, b: 80, l: 50, r: 20 },
+        height: 350
+    };
+    Plotly.newPlot(chartContainer, plotData, layout, {responsive: true});
+
+    // 2. Create the Statistics Table
+    let tableHtml = `<table class="table table-sm table-borderless">`;
+    tableHtml += `
+        <tr>
+            <th class="ps-0">Annualized Alpha:</th>
+            <td class="text-end fw-bold ${data.alpha_annualized_pct > 0 ? 'text-success' : 'text-danger'}">
+                ${data.alpha_annualized_pct.toFixed(2)}%
+            </td>
+        </tr>
+        <tr>
+            <th class="ps-0">R-Squared:</th>
+            <td class="text-end">${(data.r_squared * 100).toFixed(1)}%</td>
+        </tr>
+    </table>`;
+
+    tableHtml += '<table class="table table-sm table-hover"><thead><tr><th>Factor</th><th>Beta</th><th>T-Stat</th><th>P-Value</th></tr></thead><tbody>';
+    for (const factor of labels) {
+        const p_val = data.p_values[factor];
+        // Highlight statistically significant results (p-value < 0.05)
+        const significanceClass = p_val < 0.05 ? 'fw-bold' : '';
+        tableHtml += `
+            <tr class="${significanceClass}">
+                <td>${factor}</td>
+                <td>${data.betas[factor].toFixed(3)}</td>
+                <td>${data.t_stats[factor].toFixed(2)}</td>
+                <td>${p_val.toFixed(3)}</td>
+            </tr>
+        `;
+    }
+    tableHtml += '</tbody></table>';
+    tableContainer.innerHTML = tableHtml;
+}
     function showLoader() { loader.style.display = 'block'; }
     function hideLoader() { loader.style.display = 'none'; }
     
@@ -404,6 +468,15 @@ document.addEventListener('DOMContentLoaded', function() {
         } else {
             aiReportContainer.innerHTML = '<p class="text-muted small">AI report was not generated.</p>';
         }
+        if (results.factor_exposure && !results.factor_exposure.error) {
+        displayFactorExposure(results.factor_exposure);
+        } else {
+        const chartContainer = document.getElementById('factorExposureChart');
+        const tableContainer = document.getElementById('factorExposureTable');
+        chartContainer.innerHTML = ''; // Clear stale charts
+        const errorMessage = results.factor_exposure ? results.factor_exposure.error : "Factor data not available.";
+        tableContainer.innerHTML = `<div class="alert alert-warning p-2 small"><b>Factor Analysis Failed:</b><br>${errorMessage}</div>`;
+       }
 
         container.style.display = 'block';
     }

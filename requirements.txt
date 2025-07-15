@@ -22,3 +22,5 @@ redis
 
 # Caching
 Flask-Caching
+requests
+statsmodels
