@@ -90,7 +90,7 @@ def generate_gemini_report(kpis, monthly_returns, yearly_returns, rebalance_logs
 def generate_factor_explanation():
     """Uses Gemini to generate an explanation of the Fama-French-Carhart factors."""
     try:
-        model = genai.GenerativeModel('gemini-1.5-pro-latest') # Use a capable model
+        model = genai.GenerativeModel('gemini-2.5-pro') # Use a capable model
         prompt = """
         As a finance professor, please provide a clear and concise explanation of the four factors used in this portfolio analysis: Market (Mkt-RF), Size (SMB), Value (HML), and Momentum (UMD).
 

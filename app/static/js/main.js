@@ -1,6 +1,7 @@
 document.addEventListener('DOMContentLoaded', function() {
     
     // --- COMMON VARIABLES & INITIALIZATION ---
+    let currentBacktestResults = null;
     let pollingInterval;
     let lastBacktestLogs = [];
 
@@ -342,7 +343,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const downloadPdfBtn = document.getElementById('downloadPdfBtn');
     const explainFactorsBtn = document.getElementById('explainFactorsBtn');
     const backtestTypeSelector = document.getElementById('backtestTypeSelector');
-
+    const showSectorBoxplotBtn = document.getElementById('showSectorBoxplotBtn'); 
     if (backtestBtn) backtestBtn.addEventListener('click', runBacktest);
     if (downloadCsvBtn) downloadCsvBtn.addEventListener('click', downloadLogsAsCsv);
     if (downloadPdfBtn) downloadPdfBtn.addEventListener('click', generatePdf);
@@ -351,6 +352,7 @@ document.addEventListener('DOMContentLoaded', function() {
         backtestTypeSelector.addEventListener('change', toggleBacktestOptions);
         loadCustomPortfolios();
     }
+    if (showSectorBoxplotBtn) { showSectorBoxplotBtn.addEventListener('click', showSectorBoxplot); } // <<< --- ADD THIS LINE
     
     function toggleBacktestOptions() {
         const type = backtestTypeSelector.value;
@@ -473,6 +475,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function resetBacktestUI() {
+        currentBacktestResults = null;
         document.getElementById('backtestResultContainer').style.display = 'none';
         document.getElementById('aiChatbotContainer').style.display = 'none';
         if (typeof Plotly !== 'undefined') {
@@ -492,6 +495,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function displayBacktestResults(results) {
+        currentBacktestResults = results;
         const container = document.getElementById('backtestResultContainer');
         if (!results || !results.kpis) {
             document.getElementById('backtestStatus').innerHTML = `<div class="error-message">Received invalid or empty results from the backtest.</div>`;
@@ -629,6 +633,52 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         }, 3000);
     }
+    // --- ADD THIS ENTIRE NEW FUNCTION ---
+    function showSectorBoxplot() {
+        if (!currentBacktestResults || !currentBacktestResults.charts || !currentBacktestResults.charts.historical_sectors) {
+            alert("No backtest data available. Please run a backtest first.");
+            return;
+        }
+
+        const sourceData = currentBacktestResults.charts.historical_sectors.data;
+
+        // Transform the stacked bar data into box plot data
+        const boxplotTraces = sourceData.map(trace => {
+            // For a box plot, the 'y' is the array of all weight observations for that sector
+            return {
+                y: trace.y, // Convert weights to percentages
+                type: 'box',
+                name: trace.name,
+                boxpoints: 'all', // Show all the individual rebalance points
+                jitter: 0.4,      // Add some horizontal noise to see points better
+                pointpos: -1.8,   // Position points to the left of the box
+                marker: {
+                    size: 4
+                }
+            };
+        });
+
+        const layout = {
+            title: 'Distribution of Sector Weights Over Time',
+            yaxis: {
+                title: 'Allocation Weight (%)',
+                zeroline: true,
+                range: [0, 100]
+            },
+            margin: { t: 50, b: 80, l: 60, r: 20 },
+            showlegend: false // Legend is redundant as names are on x-axis
+        };
+
+        const modalEl = document.getElementById('sectorBoxplotModal');
+        const boxplotModal = new bootstrap.Modal(modalEl);
+    
+        // We need to plot *after* the modal is shown to ensure Plotly can get the correct div size
+        modalEl.addEventListener('shown.bs.modal', function () {
+        Plotly.newPlot('sectorBoxplotChart', boxplotTraces, layout, {responsive: true});
+    }, { once: true }); // Use 'once' to prevent this from firing multiple times.
+
+        boxplotModal.show();
+    } 
 
     // --- AI CHATBOT SECTION ---
     const chatForm = document.getElementById('chatForm');

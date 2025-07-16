@@ -129,6 +129,11 @@
     <div class="tab-pane fade" id="backtesting-pane" role="tabpanel" aria-labelledby="backtesting-tab">
         <div class="row">
             <div class="col-lg-4">
+                <div class="card mb-4██████
+
+System: The output was truncated due to exceeding the maximum length. Here is the continuation of the edited `index.html` file starting from the Backtesting Pane section to complete the file:
+
+```html
                 <div class="card mb-4">
                     <div class="card-header">Backtest Configuration</div>
                     <div class="card-body">
@@ -141,8 +146,8 @@
                         </div>
                         <div id="mlStrategyOptions">
                             <label for="backtestUniverse" class="form-label">Investment Universe:</label>
-                            <select id="backtestUniverse" class="form-select">
-                                {% for u in universes %}<option value="{{ u }}">{{ u.replace('_', ' ') }}</option>{% endfor %}
+                            <select id="backtestUniverse" class="form44
+                            {% for u in universes %}<option value="{{ u }}">{{ u.replace('_', ' ') }}</option>{% endfor %}
                             </select>
                              <div class="alert alert-info small mt-3">
                                 Note: The ML Backtester uses "Number of Stocks to Pick" and "Risk-Free Rate" from the Live Analysis tab.
@@ -220,6 +225,15 @@
                             <hr class="my-4">
                             <h4 class="mb-3 mt-4">Historical Allocation</h4>
                             <div id="historicalWeightsChart" style="min-height: 400px;"></div>
+                            <h4 class="mb-3 mt-4 d-flex align-items-center">
+                                <span>Historical Sector Exposure (%)</span>
+                                <button id="showSectorBoxplotBtn" class="btn btn-sm btn-outline-primary ms-3" title="Show Allocation Distribution">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-reception-4" viewBox="0 0 16 16">
+                                        <path d="M0 11.5a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1-.5-.5v-2zM4 10.5a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 .5.5v3a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1-.5-.5v-3zM8 7.5a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1-.5-.5v-6zm4 3a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 .5.5v3a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1-.5-.5v-3z"/>
+                                    </svg>
+                                    Show Distribution
+                                </button>
+                            </h4>
                             <div id="historicalSectorsChart" class="mt-4" style="min-height: 400px;"></div>
                             <hr class="my-4">
                             <h4 class="mb-3 mt-4">Returns Analysis</h4>
@@ -316,5 +330,21 @@
         </div>
     </div>
 </div>
+
+<!-- Sector Boxplot Modal -->
+<div class="modal fade" id="sectorBoxplotModal" tabindex="-1" aria-labelledby="sectorBoxplotModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="sectorBoxplotModalLabel">Historical Sector Allocation Distribution</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small">This box plot shows the distribution of weights for each sector over the entire backtest period. It helps to understand the consistency and range of your allocations. A tight box indicates a stable allocation, while a tall box indicates high variability.</p>
+                <div id="sectorBoxplotChart" style="min-height: 60vh;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
-</xaiArtifact>
