@@ -27,6 +27,7 @@ def predict_top_stocks(model, symbols, top_n=10):
     for symbol in symbols:
         data = get_historical_data(symbol, start_date, end_date)
         if data.empty:
+            print ("hello world")
             continue
 
         # --- THIS IS THE FIX ---
