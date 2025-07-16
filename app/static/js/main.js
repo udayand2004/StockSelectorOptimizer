@@ -353,7 +353,7 @@ document.addEventListener('DOMContentLoaded', function() {
         loadCustomPortfolios();
     }
     if (showSectorBoxplotBtn) { showSectorBoxplotBtn.addEventListener('click', showSectorBoxplot); } // <<< --- ADD THIS LINE
-    
+    if (showFactorBoxplotBtn) { showFactorBoxplotBtn.addEventListener('click', showFactorBoxplot); } 
     function toggleBacktestOptions() {
         const type = backtestTypeSelector.value;
         document.getElementById('mlStrategyOptions').style.display = (type === 'ml_strategy') ? 'block' : 'none';
@@ -646,10 +646,11 @@ document.addEventListener('DOMContentLoaded', function() {
         const boxplotTraces = sourceData.map(trace => {
             // For a box plot, the 'y' is the array of all weight observations for that sector
             return {
-                y: trace.y, // Convert weights to percentages
+                x: trace.y, // Convert weights to percentages
                 type: 'box',
                 name: trace.name,
-                boxpoints: 'all', // Show all the individual rebalance points
+                orientation: 'h',
+                boxpoints: 'false', // Show all the individual rebalance points
                 jitter: 0.4,      // Add some horizontal noise to see points better
                 pointpos: -1.8,   // Position points to the left of the box
                 marker: {
@@ -660,12 +661,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
         const layout = {
             title: 'Distribution of Sector Weights Over Time',
-            yaxis: {
+            xaxis: {
                 title: 'Allocation Weight (%)',
                 zeroline: true,
                 range: [0, 100]
             },
-            margin: { t: 50, b: 80, l: 60, r: 20 },
+            yaxis: {                  // SWAPPED: y-axis is now the categorical axis
+            autorange: 'reversed', // This keeps the order consistent with the original chart
+            automargin: true       // Ensures long labels are not cut off
+            },
+            margin: { t: 50, b: 50, l: 150, r: 20 },
             showlegend: false // Legend is redundant as names are on x-axis
         };
 
@@ -676,6 +681,73 @@ document.addEventListener('DOMContentLoaded', function() {
         modalEl.addEventListener('shown.bs.modal', function () {
         Plotly.newPlot('sectorBoxplotChart', boxplotTraces, layout, {responsive: true});
     }, { once: true }); // Use 'once' to prevent this from firing multiple times.
+
+        boxplotModal.show();
+    }
+    function showFactorBoxplot() {
+        if (!currentBacktestResults || !currentBacktestResults.charts || !currentBacktestResults.charts.rolling_factor_betas) {
+            alert("No rolling factor data available. Please run a backtest first.");
+            return;
+        }
+
+        const rawData = currentBacktestResults.charts.rolling_factor_betas;
+        if (rawData.error) {
+             alert(`Could not generate plot: ${rawData.error}`);
+             return;
+        }
+
+        // Parse the JSON data from the 'split' format
+        const factorData = JSON.parse(rawData);
+        const df = {};
+        factorData.columns.forEach((col, i) => {
+            df[col] = factorData.data.map(row => row[i]);
+        });
+
+        const boxplotTraces = [];
+        // Loop through the columns (factors) to create a box trace for each
+        for (const factorName in df) {
+            // We don't typically create a box plot for Alpha, just the betas
+            if (factorName.toLowerCase() === 'alpha') continue;
+
+            boxplotTraces.push({
+                x: df[factorName],
+                type: 'box',
+                name: factorName,
+                orientation: 'h',
+                boxpoints: 'false',
+                hovertemplate: 
+                `<b>%{y}</b><br>` + // Use {y} for the categorical name in horizontal plots
+                `Max: %{x.max:.4f}<br>` +
+                `Upper Fence: %{x.upperfence:.4f}<br>` +
+                `Q3: %{x.q3:.4f}<br>` +
+                `Median: %{x.median:.4f}<br>` +
+                `Q1: %{x.q1:.4f}<br>` +
+                `Lower Fence: %{x.lowerfence:.4f}<br>` +
+                `Min: %{x.min:.4f}` +
+                `<extra></extra>`, // The <extra> tag removes the default trace name from the tooltip
+            });
+        }
+        
+        const layout = {
+            title: 'Distribution of Rolling Factor Betas',
+            xaxis: {
+                title: 'Beta',
+                zeroline: true,
+            },
+            yaxis: {                  // SWAPPED: y-axis is now the categorical axis
+            autorange: 'reversed',
+            automargin: true
+            },
+            margin: { t: 50, b: 50, l: 120, r: 20 },
+            showlegend: false
+        };
+
+        const modalEl = document.getElementById('factorBoxplotModal');
+        const boxplotModal = new bootstrap.Modal(modalEl);
+        
+        modalEl.addEventListener('shown.bs.modal', function () {
+            Plotly.newPlot('factorBoxplotChart', boxplotTraces, layout, {responsive: true});
+        }, { once: true });
 
         boxplotModal.show();
     } 

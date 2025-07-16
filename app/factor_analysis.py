@@ -3,6 +3,7 @@ import sqlite3
 import statsmodels.api as sm
 from datetime import datetime, timedelta
 import os
+from tqdm import tqdm
 
 # App Imports
 from .config import DB_FILE
@@ -124,4 +125,57 @@ def analyze_factor_exposure(portfolio_returns: pd.Series):
 
     except Exception as e:
         print(f"--> FACTOR ANALYSIS ERROR: {e}")
+        return {"error": str(e)}
+def analyze_rolling_factor_exposure(portfolio_returns: pd.Series, window: int = 252):
+    """
+    Performs a rolling regression to get time-varying factor exposures.
+    The window is in days (default 252 is approx. 1 year).
+    """
+    if portfolio_returns.empty or len(portfolio_returns) < window:
+        return {"error": f"Not enough data for a rolling factor analysis (need > {window} days)."}
+
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            ff_factors = pd.read_sql_query("SELECT * FROM fama_french_factors", conn, index_col='Date', parse_dates=['Date'])
+
+        data = pd.merge(portfolio_returns.rename('Portfolio'), ff_factors, left_index=True, right_index=True, how='inner')
+        
+        if len(data) < window:
+            return {"error": "Not enough overlapping data for rolling analysis."}
+
+        y = data['Portfolio'] - data['RF']
+        X = data[['Mkt-RF', 'SMB', 'HML', 'UMD']]
+        X = sm.add_constant(X)
+
+        rolling_betas = {}
+
+        # This can be slow, so we iterate manually with tqdm
+        print("--- [Factor Analysis] Starting rolling factor regression... ---")
+        for i in tqdm(range(window, len(X)), desc="Rolling Betas"):
+            window_X = X.iloc[i-window:i]
+            window_y = y.iloc[i-window:i]
+            
+            model = sm.OLS(window_y, window_X).fit()
+            # We only store the betas (coefficients)
+            rolling_betas[X.index[i]] = model.params
+        
+        if not rolling_betas:
+            return {"error": "Could not generate any rolling beta results."}
+
+        # Convert dictionary to DataFrame
+        betas_df = pd.DataFrame.from_dict(rolling_betas, orient='index')
+        betas_df.rename(columns={
+            'const': 'Alpha',
+            'Mkt-RF': 'Market (Mkt-RF)',
+            'SMB': 'Size (SMB)',
+            'HML': 'Value (HML)',
+            'UMD': 'Momentum (UMD)'
+        }, inplace=True)
+        
+        print("--- [Factor Analysis] Rolling regression complete. ---")
+        # Return as JSON string in 'split' orientation for easy JS parsing
+        return betas_df.to_json(orient='split')
+
+    except Exception as e:
+        print(f"--> ROLLING FACTOR ANALYSIS ERROR: {e}")
         return {"error": str(e)}

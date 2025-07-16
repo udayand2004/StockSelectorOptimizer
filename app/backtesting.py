@@ -14,7 +14,7 @@ from .data_fetcher import get_stock_universe, get_historical_data
 from .ml_models import optimize_portfolio, get_portfolio_sector_exposure
 from .strategy import generate_all_features
 from .reporting import generate_gemini_report
-
+from . import factor_analysis 
 # --- HELPER: JSON-SAFE CONVERTER ---
 def to_json_safe(obj):
     """Converts numpy/pandas objects to JSON-serializable types."""
@@ -85,7 +85,7 @@ def generate_report_payload(portfolio_returns, benchmark_returns, holdings_df, m
     #
     # Perform Factor Exposure Analysis
     factor_exposure_results = factor_analysis.analyze_factor_exposure(portfolio_returns_clean)
-    
+    rolling_factor_results_json = factor_analysis.analyze_rolling_factor_exposure(portfolio_returns_clean)
     drawdown_series = qs.stats.to_drawdown_series(portfolio_returns_clean)
     monthly_returns_df = qs.stats.monthly_returns(portfolio_returns_clean, compounded=True)
     yearly_returns_df = portfolio_returns_clean.resample('YE').apply(lambda x: (1 + x).prod() - 1).to_frame(name='Strategy')
@@ -115,11 +115,12 @@ def generate_report_payload(portfolio_returns, benchmark_returns, holdings_df, m
             "equity": { "data": [{'x': strategy_equity.index.strftime('%Y-%m-%d').tolist(), 'y': strategy_equity.values.tolist(), 'mode': 'lines', 'name': 'Strategy', 'line': {'color': '#0d6efd', 'width': 2}}, {'x': benchmark_equity.index.strftime('%Y-%m-%d').tolist(), 'y': benchmark_equity.values.tolist(), 'mode': 'lines', 'name': 'Benchmark (NIFTY 50)', 'line': {'color': '#6c757d', 'dash': 'dot', 'width': 1.5}}], "layout": {'title': 'Strategy vs. Benchmark Performance', 'yaxis': {'title': 'Cumulative Growth', 'type': 'log'}, 'legend': {'x': 0.01, 'y': 0.99}, 'margin': {'t': 40, 'b': 40, 'l': 60, 'r': 20}} },
             "drawdown": { "data": [{'x': drawdown_series.index.strftime('%Y-%m-%d').tolist(), 'y': (drawdown_series.values * 100).tolist(), 'type': 'scatter', 'mode': 'lines', 'fill': 'tozeroy', 'name': 'Drawdown', 'line': {'color': '#dc3545'}}], "layout": {'title': 'Strategy Drawdowns', 'yaxis': {'title': 'Drawdown (%)'}, 'margin': {'t': 40, 'b': 40, 'l': 60, 'r': 20}} },
             "historical_weights": {"data": stock_traces, "layout": stock_layout},
-            "historical_sectors": {"data": sector_traces, "layout": sector_layout}
+            "historical_sectors": {"data": sector_traces, "layout": sector_layout},
+            "rolling_factor_betas": rolling_factor_results_json
         },
         "tables": { "monthly_returns": monthly_returns_df.to_json(orient='split'), "yearly_returns": yearly_returns_df.to_json(orient='split') },
         "logs": rebalance_logs,
-        "ai_report": ai_report
+        "ai_report": ai_report,   
     }
     return json.loads(json.dumps(results_payload, default=to_json_safe))
 

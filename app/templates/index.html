@@ -253,6 +253,10 @@ System: The output was truncated due to exceeding the maximum length. Here is th
                                 <a href="#" id="explainFactorsBtn" class="ms-2 text-info">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-robot" viewBox="0 0 16 16"><path d="M6 12.5a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 0 1h-3a.5.5 0 0 1-.5-.5ZM3 8.062C3 6.76 4.235 5.765 5.53 5.886a26.58 26.58 0 0 0 4.94 0C11.765 5.765 13 6.76 13 8.062v1.157a.933.933 0 0 1-.765.935c-.845.147-2.34.346-4.235.346-1.895 0-3.39-.2-4.235-.346A.933.933 0 0 1 3 9.219V8.062Zm4.542-.827a.25.25 0 0 0 .217.066l.063-.008a.25.25 0 0 0 .217-.066c.062-.058.109-.137.109-.224v-.45a.25.25 0 0 0-.25-.25h-.17a.25.25 0 0 0-.25.25v.45c0 .087.047.166.109.224Z"/><path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1ZM1.5 8a6.5 6.5 0 1 1 13 0 6.5 6.5 0 0 1-13 0Z"/></svg>
                                 </a>
+                                <!-- ADD THIS NEW BUTTON -->
+                                <button id="showFactorBoxplotBtn" class="btn btn-sm btn-outline-primary ms-2" title="Show Factor Exposure Distribution">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-reception-4" viewBox="0 0 16 16"><path d="M0 11.5a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1-.5-.5v-2zM4 10.5a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 .5.5v3a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1-.5-.5v-3zM8 7.5a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1-.5-.5v-6zm4 3a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 .5.5v3a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1-.5-.5v-3z"/></svg>
+                                </button>
                             </h4>
                             <div id="factorExplanationContainer" class="alert alert-info" style="display:none;"></div>
                             <div class="row">
@@ -342,6 +346,22 @@ System: The output was truncated due to exceeding the maximum length. Here is th
             <div class="modal-body">
                 <p class="text-muted small">This box plot shows the distribution of weights for each sector over the entire backtest period. It helps to understand the consistency and range of your allocations. A tight box indicates a stable allocation, while a tall box indicates high variability.</p>
                 <div id="sectorBoxplotChart" style="min-height: 60vh;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Factor Exposure Boxplot Modal -->
+<div class="modal fade" id="factorBoxplotModal" tabindex="-1" aria-labelledby="factorBoxplotModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="factorBoxplotModalLabel">Historical Factor Beta Distribution (1-Year Rolling)</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small">This chart shows the distribution of the strategy's sensitivity (Beta) to different market factors over time. A tight box indicates a stable exposure, while a tall box shows that the strategy's risk profile changed significantly during the backtest.</p>
+                <div id="factorBoxplotChart" style="min-height: 60vh;"></div>
             </div>
         </div>
     </div>
