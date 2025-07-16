@@ -85,3 +85,66 @@ def generate_gemini_report(kpis, monthly_returns, yearly_returns, rebalance_logs
         if "API key" in str(e).lower() or "permission" in str(e).lower():
             return f"<p class='text-danger small'><b>AI report failed to generate.</b><br>Error: The Google AI API key is not configured or is invalid. Please check your environment variables or the `app/reporting.py` file.</p>"
         return f"<p class='text-danger small'><b>AI report failed to generate.</b><br>Error: {e}</p>"
+
+
+def generate_factor_explanation():
+    """Uses Gemini to generate an explanation of the Fama-French-Carhart factors."""
+    try:
+        model = genai.GenerativeModel('gemini-1.5-pro-latest') # Use a capable model
+        prompt = """
+        As a finance professor, please provide a clear and concise explanation of the four factors used in this portfolio analysis: Market (Mkt-RF), Size (SMB), Value (HML), and Momentum (UMD).
+
+        Structure your explanation for an investor who is intelligent but may not be a quantitative expert. For each factor, explain:
+        1.  What it represents (the underlying economic idea).
+        2.  How it is calculated (e.g., Small-Minus-Big for SMB).
+        3.  What a positive or negative beta to this factor implies about the portfolio's strategy.
+
+        Keep the language accessible and focus on the intuition behind each factor. Format the output using simple Markdown (e.g., **bold** for titles, bullet points).
+        """
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        return f"<p class='text-danger'><b>AI explanation failed.</b><br>Error: {e}</p>"   
+# File: app/reporting.py
+
+# ... (keep all existing functions: generate_gemini_report, generate_factor_explanation) ...
+
+def answer_user_question(question, context_data):
+    """Uses Gemini to answer a user's question based on backtest context."""
+    try:
+        model = genai.GenerativeModel('gemini-2.5-pro')
+        
+        # Serialize the context data into a readable string for the prompt
+        context_str = "Key Performance Indicators:\n"
+        for key, value in context_data.get('kpis', {}).items():
+            context_str += f"- {key}: {value}\n"
+        
+        context_str += "\nFull Metrics:\n"
+        for key, value in context_data.get('full_metrics', {}).items():
+            context_str += f"- {key}: {value}\n"
+
+        context_str += f"\nAI Analysis Summary:\n{context_data.get('ai_summary', 'Not available.')}"
+
+        prompt = f"""
+        You are a specialized Quantitative Finance AI assistant. Your sole purpose is to answer questions about a specific backtest report. You must use ONLY the data provided below as your context.
+
+        --- CONTEXT: BACKTEST REPORT DATA ---
+        {context_str}
+        --- END OF CONTEXT ---
+
+        The user has asked the following question: "{question}"
+
+        Your Task:
+        1.  Analyze the user's question.
+        2.  Formulate an answer based *strictly* on the provided context data.
+        3.  If the question is a general definition of a metric present in the context (e.g., "What is Sharpe Ratio?"), you can provide a standard financial definition.
+        4.  If the question refers to a specific value (e.g., "Why is the CAGR 7%?"), refer to the data in your answer (e.g., "The report shows a CAGR of 7.00%...").
+        5.  If the user's question cannot be answered from the provided context, you MUST respond with: "I'm sorry, but I can only answer questions directly related to the provided backtest report data."
+        6.  Keep your answers concise, clear, and professional. Use simple Markdown for formatting if needed (like **bolding**).
+        """
+        response = model.generate_content(prompt)
+        return response.text
+
+    except Exception as e:
+        print(f"--- Gemini Chatbot Failed: {e} ---")
+        return f"<p class='text-danger small'><b>AI Assistant Error.</b><br>Could not generate a response. Please check the server logs. Error: {e}</p>"

@@ -1,14 +1,21 @@
-from flask import current_app as app, render_template, jsonify, request
-from . import data_fetcher
-from . import ml_models
-from .tasks import run_backtest_task, run_custom_backtest_task
-from celery.result import AsyncResult
-from datetime import date
-import joblib
+# app/routes.py
+
+from flask import current_app as app, render_template, jsonify, request, send_file
+from weasyprint import HTML, CSS
+import io
 import os
 import sqlite3
 import json
+import joblib
+from datetime import date
+from celery.result import AsyncResult
+
+from . import data_fetcher
+from . import ml_models
+from . import reporting
+from .tasks import run_backtest_task, run_custom_backtest_task
 from .config import PORTFOLIOS_DB_FILE, STOCK_UNIVERSES
+
 
 @app.route('/')
 def index():
@@ -16,20 +23,17 @@ def index():
     universes = list(STOCK_UNIVERSES.keys())
     current_date = date.today().strftime('%Y-%m-%d')
     
-    # --- THIS IS THE FIX FOR THE PORTFOLIO STUDIO ---
-    # Get all stocks from the NIFTY 100 universe to populate the selector
     all_stocks_for_studio = sorted(list(set(
         STOCK_UNIVERSES.get("NIFTY_50", []) + 
         STOCK_UNIVERSES.get("NIFTY_NEXT_50", [])
     )))
-    # --- END OF FIX ---
     
     return render_template(
         'index.html', 
         model_ready=model_ready, 
         universes=universes, 
         current_date=current_date,
-        all_stocks_for_studio=all_stocks_for_studio # Pass the list to the template
+        all_stocks_for_studio=all_stocks_for_studio
     )
 
 @app.route('/api/analyze_and_optimize', methods=['POST'])
@@ -163,3 +167,56 @@ def backtest_status(task_id):
     else: 
         response = {'state': task_result.state, 'status': str(task_result.info)}
     return jsonify(response)
+
+@app.route('/api/explain_factors', methods=['POST'])
+def explain_factors():
+    explanation = reporting.generate_factor_explanation()
+    html_explanation = explanation.replace('\n\n', '<p>').replace('\n', '<br>').replace('**', '<strong>').replace('**', '</strong>')
+    return jsonify({'explanation': html_explanation})
+
+# --- ADD THIS ENTIRE NEW ROUTE ---
+@app.route('/api/generate_pdf', methods=['POST'])
+def generate_pdf():
+    try:
+        html_content = request.get_data(as_text=True)
+        if not html_content:
+            return jsonify({"error": "No HTML content received."}), 400
+
+        pdf_bytes = io.BytesIO()
+        css = CSS(string='''
+            @page { size: A4; margin: 1cm; }
+            body { font-family: sans-serif; }
+            .card { border: 1px solid #ccc; margin-bottom: 20px; page-break-inside: avoid; }
+            h1, h2, h3, h4, h5 { page-break-after: avoid; }
+            .js-plotly-plot { width: 100% !important; }
+            .table-responsive { overflow: hidden; }
+        ''')
+        
+        HTML(string=html_content).write_pdf(pdf_bytes, stylesheets=[css])
+        pdf_bytes.seek(0)
+
+        return send_file(
+            pdf_bytes,
+            as_attachment=True,
+            download_name='backtest_report.pdf',
+            mimetype='application/pdf'
+        )
+    except Exception as e:
+        print(f"PDF Generation Error: {e}")
+        return jsonify({"error": "Failed to generate PDF."}), 500
+@app.route('/api/ask_chatbot', methods=['POST'])
+def ask_chatbot():
+    data = request.get_json()
+    question = data.get('question')
+    context = data.get('context')
+
+    if not question or not context:
+        return jsonify({"answer": "Error: Missing question or context."}), 400
+
+    # Call the new reporting function
+    raw_answer = reporting.answer_user_question(question, context)
+
+    # Convert simple markdown to HTML for display
+    html_answer = raw_answer.replace('\n', '<br>').replace('**', '<strong>').replace('**', '</strong>')
+
+    return jsonify({'answer': html_answer})

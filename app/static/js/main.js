@@ -13,71 +13,73 @@ document.addEventListener('DOMContentLoaded', function() {
     const sectorBarChart = document.getElementById('sectorBarChart');
 
     if (runAnalysisBtn) { runAnalysisBtn.addEventListener('click', runFullAnalysis); }
+    
     function displayFactorExposure(data) {
-    const chartContainer = document.getElementById('factorExposureChart');
-    const tableContainer = document.getElementById('factorExposureTable');
+        const chartContainer = document.getElementById('factorExposureChart');
+        const tableContainer = document.getElementById('factorExposureTable');
 
-    if (data.error) {
-        chartContainer.innerHTML = `<p class="text-danger small">${data.error}</p>`;
-        tableContainer.innerHTML = '';
-        return;
-    }
+        if (data.error) {
+            chartContainer.innerHTML = `<p class="text-danger small">${data.error}</p>`;
+            tableContainer.innerHTML = '';
+            return;
+        }
 
-    // 1. Create the Bar Chart for Betas
-    const betas = data.betas;
-    const labels = Object.keys(betas);
-    const values = Object.values(betas);
-    const colors = values.map(v => v >= 0 ? 'rgba(13, 110, 253, 0.7)' : 'rgba(220, 53, 69, 0.7)');
+        // 1. Create the Bar Chart for Betas
+        const betas = data.betas;
+        const labels = Object.keys(betas);
+        const values = Object.values(betas);
+        const colors = values.map(v => v >= 0 ? 'rgba(13, 110, 253, 0.7)' : 'rgba(220, 53, 69, 0.7)');
 
-    const plotData = [{
-        x: labels,
-        y: values,
-        type: 'bar',
-        marker: { color: colors },
-        text: values.map(v => v.toFixed(3)),
-        textposition: 'auto'
-    }];
-    const layout = {
-        title: 'Factor Betas',
-        yaxis: { title: 'Beta', zeroline: true },
-        xaxis: { tickangle: -20 },
-        margin: { t: 40, b: 80, l: 50, r: 20 },
-        height: 350
-    };
-    Plotly.newPlot(chartContainer, plotData, layout, {responsive: true});
+        const plotData = [{
+            x: labels,
+            y: values,
+            type: 'bar',
+            marker: { color: colors },
+            text: values.map(v => v.toFixed(3)),
+            textposition: 'auto'
+        }];
+        const layout = {
+            title: 'Factor Betas',
+            yaxis: { title: 'Beta', zeroline: true },
+            xaxis: { tickangle: -20 },
+            margin: { t: 40, b: 80, l: 50, r: 20 },
+            height: 350
+        };
+        Plotly.newPlot(chartContainer, plotData, layout, {responsive: true});
 
-    // 2. Create the Statistics Table
-    let tableHtml = `<table class="table table-sm table-borderless">`;
-    tableHtml += `
-        <tr>
-            <th class="ps-0">Annualized Alpha:</th>
-            <td class="text-end fw-bold ${data.alpha_annualized_pct > 0 ? 'text-success' : 'text-danger'}">
-                ${data.alpha_annualized_pct.toFixed(2)}%
-            </td>
-        </tr>
-        <tr>
-            <th class="ps-0">R-Squared:</th>
-            <td class="text-end">${(data.r_squared * 100).toFixed(1)}%</td>
-        </tr>
-    </table>`;
-
-    tableHtml += '<table class="table table-sm table-hover"><thead><tr><th>Factor</th><th>Beta</th><th>T-Stat</th><th>P-Value</th></tr></thead><tbody>';
-    for (const factor of labels) {
-        const p_val = data.p_values[factor];
-        // Highlight statistically significant results (p-value < 0.05)
-        const significanceClass = p_val < 0.05 ? 'fw-bold' : '';
+        // 2. Create the Statistics Table
+        let tableHtml = `<table class="table table-sm table-borderless">`;
         tableHtml += `
-            <tr class="${significanceClass}">
-                <td>${factor}</td>
-                <td>${data.betas[factor].toFixed(3)}</td>
-                <td>${data.t_stats[factor].toFixed(2)}</td>
-                <td>${p_val.toFixed(3)}</td>
+            <tr>
+                <th class="ps-0">Annualized Alpha:</th>
+                <td class="text-end fw-bold ${data.alpha_annualized_pct > 0 ? 'text-success' : 'text-danger'}">
+                    ${data.alpha_annualized_pct.toFixed(2)}%
+                </td>
             </tr>
-        `;
+            <tr>
+                <th class="ps-0">R-Squared:</th>
+                <td class="text-end">${(data.r_squared * 100).toFixed(1)}%</td>
+            </tr>
+        </table>`;
+
+        tableHtml += '<table class="table table-sm table-hover"><thead><tr><th>Factor</th><th>Beta</th><th>T-Stat</th><th>P-Value</th></tr></thead><tbody>';
+        for (const factor of labels) {
+            const p_val = data.p_values[factor];
+            // Highlight statistically significant results (p-value < 0.05)
+            const significanceClass = p_val < 0.05 ? 'fw-bold' : '';
+            tableHtml += `
+                <tr class="${significanceClass}">
+                    <td>${factor}</td>
+                    <td>${data.betas[factor].toFixed(3)}</td>
+                    <td>${data.t_stats[factor].toFixed(2)}</td>
+                    <td>${p_val.toFixed(3)}</td>
+                </tr>
+            `;
+        }
+        tableHtml += '</tbody></table>';
+        tableContainer.innerHTML = tableHtml;
     }
-    tableHtml += '</tbody></table>';
-    tableContainer.innerHTML = tableHtml;
-}
+
     function showLoader() { loader.style.display = 'block'; }
     function hideLoader() { loader.style.display = 'none'; }
     
@@ -161,12 +163,14 @@ document.addEventListener('DOMContentLoaded', function() {
         Plotly.newPlot(sectorBarChart, data, layout, {responsive: true});
     }
 
-
     // --- PORTFOLIO STUDIO SECTION ---
     const stockSelector = document.getElementById('stockSelector');
     const manualWeightsContainer = document.getElementById('manualWeightsContainer');
     const savePortfolioBtn = document.getElementById('savePortfolioBtn');
+    const importCsvBtn = document.getElementById('importCsvBtn');
+    const csvFileInput = document.getElementById('csvFileInput');
 
+    if(importCsvBtn) { importCsvBtn.addEventListener('click', handleCsvImport); }
     if (document.querySelector('input[name="weightMethod"]')) {
         document.querySelectorAll('input[name="weightMethod"]').forEach(elem => {
             elem.addEventListener('change', function(event) {
@@ -179,9 +183,80 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         });
     }
-
     if(stockSelector) stockSelector.addEventListener('change', updateManualWeightsUI);
     if(savePortfolioBtn) savePortfolioBtn.addEventListener('click', savePortfolio);
+
+    function handleCsvImport() {
+        const file = csvFileInput.files[0];
+        if (!file) {
+            alert("Please select a CSV file to import.");
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = function(event) {
+            try {
+                const csv = event.target.result;
+                const lines = csv.split('\n').filter(line => line.trim() !== '');
+                const header = lines.shift().trim().toLowerCase().split(',');
+
+                const symbolIndex = header.indexOf('symbol');
+                const weightIndex = header.indexOf('weight');
+
+                if (symbolIndex === -1 || weightIndex === -1) {
+                    throw new Error('CSV must contain "Symbol" and "Weight" columns.');
+                }
+
+                const portfolio = lines.map(line => {
+                    const values = line.trim().split(',');
+                    return {
+                        symbol: values[symbolIndex].trim().toUpperCase(),
+                        weight: parseFloat(values[weightIndex])
+                    };
+                });
+                
+                populatePortfolioFromCsv(portfolio);
+
+            } catch (e) {
+                alert("Failed to parse CSV file. Error: " + e.message);
+            }
+        };
+        reader.readAsText(file);
+    }
+
+    function populatePortfolioFromCsv(portfolio) {
+        // 1. Set weighting method to manual
+        document.getElementById('manualWeights').checked = true;
+        manualWeightsContainer.style.display = 'block';
+
+        // 2. Clear current selections and select stocks from CSV
+        for(let i=0; i<stockSelector.options.length; i++) {
+            stockSelector.options[i].selected = false;
+        }
+        portfolio.forEach(item => {
+            const option = Array.from(stockSelector.options).find(opt => opt.value === item.symbol);
+            if(option) {
+                option.selected = true;
+            } else {
+                console.warn(`Symbol ${item.symbol} from CSV not found in stock list.`);
+            }
+        });
+
+        // 3. Update the manual weights UI
+        updateManualWeightsUI();
+        
+        // 4. Populate the weights from the CSV
+        portfolio.forEach(item => {
+            const input = document.querySelector(`.manual-weight-input[data-stock="${item.symbol}"]`);
+            if(input) {
+                input.value = item.weight.toFixed(2);
+            }
+        });
+
+        // 5. Recalculate the total
+        updateTotalWeight();
+        alert("Portfolio imported successfully! Please review and save.");
+    }
 
     function updateManualWeightsUI() {
         if (!stockSelector) return;
@@ -261,19 +336,22 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-
     // --- BACKTESTING SECTION ---
     const backtestBtn = document.getElementById('runBacktestBtn');
     const downloadCsvBtn = document.getElementById('downloadCsvBtn');
+    const downloadPdfBtn = document.getElementById('downloadPdfBtn');
+    const explainFactorsBtn = document.getElementById('explainFactorsBtn');
     const backtestTypeSelector = document.getElementById('backtestTypeSelector');
 
     if (backtestBtn) backtestBtn.addEventListener('click', runBacktest);
     if (downloadCsvBtn) downloadCsvBtn.addEventListener('click', downloadLogsAsCsv);
+    if (downloadPdfBtn) downloadPdfBtn.addEventListener('click', generatePdf);
+    if (explainFactorsBtn) explainFactorsBtn.addEventListener('click', handleExplainFactors);
     if (backtestTypeSelector) {
         backtestTypeSelector.addEventListener('change', toggleBacktestOptions);
         loadCustomPortfolios();
     }
-
+    
     function toggleBacktestOptions() {
         const type = backtestTypeSelector.value;
         document.getElementById('mlStrategyOptions').style.display = (type === 'ml_strategy') ? 'block' : 'none';
@@ -396,6 +474,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function resetBacktestUI() {
         document.getElementById('backtestResultContainer').style.display = 'none';
+        document.getElementById('aiChatbotContainer').style.display = 'none';
         if (typeof Plotly !== 'undefined') {
             Plotly.purge('backtestEquityChart');
             Plotly.purge('backtestDrawdownChart');
@@ -469,15 +548,21 @@ document.addEventListener('DOMContentLoaded', function() {
             aiReportContainer.innerHTML = '<p class="text-muted small">AI report was not generated.</p>';
         }
         if (results.factor_exposure && !results.factor_exposure.error) {
-        displayFactorExposure(results.factor_exposure);
+            displayFactorExposure(results.factor_exposure);
         } else {
-        const chartContainer = document.getElementById('factorExposureChart');
-        const tableContainer = document.getElementById('factorExposureTable');
-        chartContainer.innerHTML = ''; // Clear stale charts
-        const errorMessage = results.factor_exposure ? results.factor_exposure.error : "Factor data not available.";
-        tableContainer.innerHTML = `<div class="alert alert-warning p-2 small"><b>Factor Analysis Failed:</b><br>${errorMessage}</div>`;
-       }
+            const chartContainer = document.getElementById('factorExposureChart');
+            const tableContainer = document.getElementById('factorExposureTable');
+            chartContainer.innerHTML = ''; // Clear stale charts
+            const errorMessage = results.factor_exposure ? results.factor_exposure.error : "Factor data not available.";
+            tableContainer.innerHTML = `<div class="alert alert-warning p-2 small"><b>Factor Analysis Failed:</b><br>${errorMessage}</div>`;
+        }
 
+        // Show the chatbot container now that there are results
+        document.getElementById('aiChatbotContainer').style.display = 'block';
+        // Clear any previous chat history
+        const chatDisplay = document.getElementById('chatDisplay');
+        chatDisplay.innerHTML = '<div class="chat-message bot-message">Hello! Ask me about this backtest report.</div>';
+        
         container.style.display = 'block';
     }
 
@@ -544,4 +629,180 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         }, 3000);
     }
+
+    // --- AI CHATBOT SECTION ---
+    const chatForm = document.getElementById('chatForm');
+    const chatInput = document.getElementById('chatInput');
+    const chatDisplay = document.getElementById('chatDisplay');
+
+    if (chatForm) {
+        chatForm.addEventListener('submit', handleChatSubmit);
+    }
+
+    function getBacktestContext() {
+        const context = {
+            kpis: {},
+            full_metrics: {},
+            ai_summary: ''
+        };
+
+        // 1. Scrape KPIs from the top cards
+        const kpiIds = ['cagrValue', 'sharpeValue', 'drawdownValue', 'calmarValue', 'betaValue', 'sortinoValue', 'varValue', 'cvarValue'];
+        kpiIds.forEach(id => {
+            const el = document.getElementById(id);
+            if(el) {
+                // Get the text label from the sibling p tag
+                const label = el.nextElementSibling.textContent;
+                context.kpis[label] = el.textContent;
+            }
+        });
+
+        // 2. Scrape the full metrics table
+        const metricsTable = document.getElementById('fullMetricsTableContainer');
+        metricsTable.querySelectorAll('tr').forEach(row => {
+            const key = row.querySelector('th')?.textContent;
+            const value = row.querySelector('td')?.textContent;
+            if (key && value) {
+                context.full_metrics[key] = value;
+            }
+        });
+
+        // 3. Get the AI summary report
+        context.ai_summary = document.getElementById('aiReportContainer').textContent;
+
+        return context;
+    }
+    
+    function appendChatMessage(message, sender) {
+        const messageEl = document.createElement('div');
+        messageEl.classList.add('chat-message', `${sender}-message`);
+        messageEl.innerHTML = message; // Use innerHTML to render bold/breaks from AI
+        chatDisplay.appendChild(messageEl);
+        chatDisplay.scrollTop = chatDisplay.scrollHeight; // Auto-scroll to bottom
+        return messageEl;
+    }
+
+    async function handleChatSubmit(e) {
+        e.preventDefault();
+        const userMessage = chatInput.value.trim();
+        if (!userMessage) return;
+
+        appendChatMessage(userMessage, 'user');
+        chatInput.value = '';
+
+        const thinkingEl = appendChatMessage('<i>Assistant is thinking...</i>', 'bot');
+        thinkingEl.classList.add('thinking');
+
+        try {
+            const context = getBacktestContext();
+            
+            const response = await fetch('/api/ask_chatbot', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    question: userMessage,
+                    context: context
+                })
+            });
+
+            const data = await response.json();
+            thinkingEl.remove(); // Remove the "thinking" message
+
+            if (!response.ok) {
+                throw new Error(data.answer || 'An unknown error occurred.');
+            }
+            
+            appendChatMessage(data.answer, 'bot');
+
+        } catch (error) {
+            thinkingEl.remove();
+            appendChatMessage(`<strong>Error:</strong> ${error.message}`, 'bot');
+        }
+    }
+
+    // --- AI FACTOR EXPLANATION LOGIC ---
+    const factorExplanationContainer = document.getElementById('factorExplanationContainer');
+
+    async function handleExplainFactors(e) {
+        e.preventDefault();
+        
+        // Show loader and hide previous text
+        factorExplanationContainer.style.display = 'block';
+        factorExplanationContainer.innerHTML = `
+            <div class="d-flex align-items-center">
+                <strong>Generating explanation with AI...</strong>
+                <div class="spinner-border ms-auto" role="status" aria-hidden="true"></div>
+            </div>`;
+
+        try {
+            const response = await fetch('/api/explain_factors', { method: 'POST' });
+            const data = await response.json();
+            if(response.ok) {
+                factorExplanationContainer.innerHTML = data.explanation;
+            } else {
+                throw new Error(data.error || 'Failed to fetch explanation.');
+            }
+        } catch (error) {
+            factorExplanationContainer.innerHTML = `<p class="text-danger">${error.message}</p>`;
+        }
+    }
 });
+
+async function generatePdf() {
+    const reportContainer = document.getElementById('backtestResultContainer');
+    if (!reportContainer || reportContainer.style.display === 'none') {
+        alert("Please run a backtest first to generate a report.");
+        return;
+    }
+
+    const originalTitle = document.title;
+    document.title = "Backtest_Report"; // Set a good filename
+
+    // Temporarily hide buttons for a cleaner PDF
+    const pdfBtn = document.getElementById('downloadPdfBtn');
+    const csvBtn = document.getElementById('downloadCsvBtn');
+    const factorBtn = document.getElementById('explainFactorsBtn');
+    pdfBtn.style.display = 'none';
+    csvBtn.style.display = 'none';
+    if(factorBtn) factorBtn.style.display = 'none';
+
+    const loader = document.getElementById('loader');
+    loader.style.display = 'block'; // Show loader
+
+    try {
+        // Get the HTML of the report section
+        const reportHtml = reportContainer.innerHTML;
+
+        const response = await fetch('/api/generate_pdf', {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: reportHtml
+        });
+
+        if (!response.ok) {
+            throw new Error('PDF generation failed on the server.');
+        }
+
+        // Get the PDF blob and create a download link
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = 'backtest_report.pdf';
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        
+    } catch (error) {
+        console.error("Error generating PDF:", error);
+        alert("Could not generate PDF. See console for details.");
+    } finally {
+         // Restore buttons and title
+        pdfBtn.style.display = 'inline-block';
+        csvBtn.style.display = 'inline-block';
+        if(factorBtn) factorBtn.style.display = 'inline-block';
+        document.title = originalTitle;
+        loader.style.display = 'none'; // Hide loader
+    }
+}

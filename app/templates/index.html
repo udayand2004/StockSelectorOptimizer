@@ -91,6 +91,13 @@
                             <div class="form-text">Hold Ctrl/Cmd to select multiple stocks.</div>
                         </div>
                         <hr>
+                        <h6>Import from CSV</h6>
+                        <div class="input-group mb-3">
+                            <input type="file" class="form-control" id="csvFileInput" accept=".csv">
+                            <button class="btn btn-outline-secondary" type="button" id="importCsvBtn">Import</button>
+                        </div>
+                        <div class="form-text mb-3">CSV format: Two columns with headers "Symbol" and "Weight". Weights should be percentages (e.g., 5.5 for 5.5%).</div>
+                        <hr>
                         <h6>Weighting Method</h6>
                         <div class="form-check">
                             <input class="form-check-input" type="radio" name="weightMethod" id="hrpOptimized" value="hrp" checked>
@@ -163,10 +170,33 @@
                         <p class="text-muted small">Run a backtest to see the detailed metrics report.</p>
                     </div>
                 </div>
+                <!-- =============================== -->
+                <!-- === NEW CHATBOT CARD HERE === -->
+                <!-- =============================== -->
+                <div class="card mb-4" id="aiChatbotContainer" style="display: none;">
+                    <div class="card-header">AI Backtest Assistant</div>
+                    <div class="card-body">
+                        <div id="chatDisplay">
+                            <div class="chat-message bot-message">Hello! I'm your AI assistant. After you run a backtest, you can ask me questions about the results.</div>
+                        </div>
+                        <form id="chatForm">
+                            <div class="input-group">
+                                <input type="text" id="chatInput" class="form-control" placeholder="Ask about Sharpe Ratio, Drawdown, etc..." required>
+                                <button class="btn btn-primary" type="submit" id="chatSendBtn">Send</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
             </div>
             <div class="col-lg-8">
                 <div class="card">
-                    <div class="card-header">Backtest Performance Report</div>
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span>Backtest Performance Report</span>
+                        <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#metricsHelpModal">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-question-circle" viewBox="0 0 16 16"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/><path d="M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286zm1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94z"/></svg>
+                            Metric Definitions
+                        </button>
+                    </div>
                     <div class="card-body" style="min-height: 80vh;">
                         <div id="backtestStatus" class="text-center p-5">
                             <p class="text-muted">Configure and run a backtest to see the performance report.</p>
@@ -202,8 +232,15 @@
                                     <h5>Yearly Returns (%)</h5>
                                     <div id="yearlyReturnsTable" class="table-responsive"></div>
                                 </div>
-                             <hr class="my-4">
-                            <h4 class="mb-3 mt-4">Factor Exposure Analysis</h4>
+                            </div>
+                            <hr class="my-4">
+                            <h4 class="mb-3 mt-4 d-flex align-items-center">
+                                Factor Exposure Analysis
+                                <a href="#" id="explainFactorsBtn" class="ms-2 text-info">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-robot" viewBox="0 0 16 16"><path d="M6 12.5a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 0 1h-3a.5.5 0 0 1-.5-.5ZM3 8.062C3 6.76 4.235 5.765 5.53 5.886a26.58 26.58 0 0 0 4.94 0C11.765 5.765 13 6.76 13 8.062v1.157a.933.933 0 0 1-.765.935c-.845.147-2.34.346-4.235.346-1.895 0-3.39-.2-4.235-.346A.933.933 0 0 1 3 9.219V8.062Zm4.542-.827a.25.25 0 0 0 .217.066l.063-.008a.25.25 0 0 0 .217-.066c.062-.058.109-.137.109-.224v-.45a.25.25 0 0 0-.25-.25h-.17a.25.25 0 0 0-.25.25v.45c0 .087.047.166.109.224Z"/><path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1ZM1.5 8a6.5 6.5 0 1 1 13 0 6.5 6.5 0 0 1-13 0Z"/></svg>
+                                </a>
+                            </h4>
+                            <div id="factorExplanationContainer" class="alert alert-info" style="display:none;"></div>
                             <div class="row">
                                 <div class="col-lg-7">
                                     <div id="factorExposureChart" style="min-height: 350px;"></div>
@@ -216,7 +253,13 @@
                             <hr class="my-4">
                             <div class="d-flex justify-content-between align-items-center mt-4">
                                 <h4 class="mb-0">Rebalancing Log</h4>
-                                <button id="downloadCsvBtn" class="btn btn-sm btn-outline-secondary">Download as CSV</button>
+                                <div>
+                                    <button id="downloadPdfBtn" class="btn btn-sm btn-danger me-2">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-file-earmark-pdf" viewBox="0 0 16 16"><path d="M14 14V4.5L9.5 0H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2zM9.5 3A1.5 1.5 0 0 0 11 4.5h2V14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h5.5v2z"/><path d="M4.603 14.087a.81.81 0 0 1-.438-.42c-.195-.388-.13-.776.08-1.102.198-.307.526-.568.897-.787a7.68 7.68 0 0 1 1.482-.645 19.697 19.697 0 0 0 1.062-2.227 7.269 7.269 0 0 1-.43-1.295c-.086-.4-.119-.796-.046-1.136.075-.354.274-.672.65-.823.192-.077.4-.12.602-.12h.007a.702.702 0 0 1 .488.26.87.87 0 0 1 .287.498.92.92 0 0 1-.088.484c-.09.15-.254.296-.44.408a.61.61 0 0 1-.394.134c-.114.007-.227-.012-.317-.054a.6.6 0 0 1-.252-.192c-.068-.092-.099-.204-.076-.313.023-.106.09-.196.23-.255.126-.053.275-.07.43-.052.143.018.283.078.388.172.12.11.187.258.196.412.01.15-.028.302-.102.433-.074.133-.203.236-.355.299a.64.64 0 0 1-.43.078c-.234-.008-.435-.116-.58-.277-.14-.15-.2-.333-.186-.512.013-.15.088-.293.208-.402.118-.106.27-.163.43-.163.153 0 .293.046.402.122.11.075.188.186.21.315.023.135.008.274-.04.403-.048.13-.12.24-.22.326a.6.6 0 0 1-.41.133c-.12.007-.235-.012-.326-.053a.6.6 0 0 1-.255-.192c-.068-.092-.099-.203-.075-.313.023-.106.09-.196.23-.255.126-.053.275-.07.43-.052.155.02.302.09.41.192.106.1.166.238.172.382.006.14-.027.27-.09.388a.65.65 0 0 1-.352.29c-.14.062-.295.093-.46.093a.81.81 0 0 1-.438-.115.82.82 0 0 1-.3-.28c-.145-.252-.2-.53-.186-.82.013-.27.09-.523.238-.732.135-.19.33-.35.56-.46.238-.11.49-.16.75-.16.254 0 .504.05.742.15.24.098.446.248.6.448.15.2.24.45.24.7s-.09.5-.24.7a.85.85 0 0 1-.6.448c-.24.098-.496.146-.742.146a.87.87 0 0 1-.498-.15c-.19-.116-.33-.29-.408-.508a.83.83 0 0 1-.023-.424c.006-.11.04-.216.11-.304.07-.09.16-.16.27-.2.11-.04.23-.06.35-.06.123 0 .243.02.353.06.11.04.207.1.287.18.08.08.14.17.18.27.04.1.06.21.06.32s-.02.22-.06.32a.5.5 0 0 1-.18.28c-.08.08-.18.14-.28.18a.5.5 0 0 1-.32.06c-.11 0-.22-.02-.32-.06a.5.5 0 0 1-.28-.18.5.5 0 0 1-.18-.28.49.49 0 0 1-.06-.32z"/></svg>
+                                        Download PDF
+                                    </button>
+                                    <button id="downloadCsvBtn" class="btn btn-sm btn-outline-secondary">Download as CSV</button>
+                                </div>
                             </div>
                             <div id="rebalanceLogContainer" class="table-responsive small mt-3" style="max-height: 400px;"></div>
                             <hr class="my-4">
@@ -231,4 +274,47 @@
         </div>
     </div>
 </div>
+
+<!-- Metrics Help Modal -->
+<div class="modal fade" id="metricsHelpModal" tabindex="-1" aria-labelledby="metricsHelpModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="metricsHelpModalLabel">Performance Metric Definitions</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <dl>
+                    <dt>CAGR (Compound Annual Growth Rate)</dt>
+                    <dd>The average annual growth rate of an investment over a specified period longer than one year.</dd>
+
+                    <dt>Sharpe Ratio</dt>
+                    <dd>Measures the performance of an investment compared to a risk-free asset, after adjusting for its risk. A higher Sharpe Ratio is better. It answers the question: "How much excess return am I getting for the extra volatility I'm holding?"</dd>
+
+                    <dt>Max Drawdown</dt>
+                    <dd>The maximum observed loss from a peak to a trough of a portfolio, before a new peak is attained. It's an indicator of the worst-case loss scenario during the backtest.</dd>
+
+                    <dt>Sortino Ratio</dt>
+                    <dd>Similar to the Sharpe Ratio, but it only penalizes for "bad" volatility (downside deviation), not "good" volatility (upside swings). It is often more relevant for investors who are primarily concerned with downside risk.</dd>
+
+                    <dt>Calmar Ratio</dt>
+                    <dd>Measures risk-adjusted return based on the Max Drawdown. It is calculated as CAGR divided by the absolute value of the Max Drawdown. A higher Calmar is better.</dd>
+                    
+                    <dt>Beta</dt>
+                    <dd>A measure of a portfolio's volatility, or systematic risk, in comparison to the market as a whole (the benchmark). A Beta of 1 indicates the portfolio moves with the market. Beta < 1 is less volatile; Beta > 1 is more volatile.</dd>
+
+                    <dt>Alpha (from Factor Analysis)</dt>
+                    <dd>The excess return of the portfolio relative to the return of a benchmark index, after adjusting for its risk exposure (betas) to known market factors. A positive, statistically significant Alpha suggests the strategy has generated returns not explained by exposure to common risks.</dd>
+
+                    <dt>R-Squared (from Factor Analysis)</dt>
+                    <dd>Represents the percentage of a portfolio's returns that can be explained by movements in the benchmark/factors. An R-squared of 75% means that 75% of the portfolio's price movements are explained by the factors in the model.</dd>
+                </dl>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
+</xaiArtifact>
